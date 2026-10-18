@@ -1,0 +1,41 @@
+# ── Dependencies ─────────────────────────────────────────────────────────────
+# node_modules from the host (if any) must never enter the build context:
+# native binaries (e.g. esbuild, rollup) are compiled per OS and libc variant.
+# Host-built binaries would silently break inside Alpine's musl environment.
+# The container's own node_modules come from the npm ci RUN in Dockerfile.dev.
+node_modules/
+
+# ── Build output ─────────────────────────────────────────────────────────────
+# Vite's production dist is irrelevant for the dev-server image.
+dist/
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Secrets / local overrides ─────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── IDE and OS noise ──────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+**/*.log
+logs/
+
+# ── Docker files (not needed inside the image context) ───────────────────────
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ── CI / docs ────────────────────────────────────────────────────────────────
+.github/
+.gitlab/
+Jenkinsfile
+*.md
+README*

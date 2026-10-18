@@ -1,0 +1,48 @@
+# =============================================================================
+# hr-frontend — DEV-ONLY Dockerfile (not for production use).
+#
+# Runs Vite's development server with HMR (Hot Module Replacement). Source
+# edits on the host are reflected in the browser in real time via a WebSocket
+# connection, without any container restart.
+#
+# A production build would use the multi-stage template at
+# .claude/templates/devops/Dockerfile.multistage (Variant C: Node + nginx),
+# which produces a static dist/ served by nginx — no Node runtime at all.
+# =============================================================================
+
+# Matches the node:22-alpine tag used by mock-api in the CaseFabric engine stack
+# (casefabric/getting-started/docker-compose.yml, read-only reference). Keeping
+# Node versions consistent across all local containers reduces surprise version
+# mismatches when sharing npm tooling output (e.g. TypeScript output, lint).
+FROM node:22-alpine
+
+WORKDIR /app
+
+# ── Dependency-caching layer ──────────────────────────────────────────────────
+# Copy only the package manifests before the bind-mount takes over at runtime.
+# Docker rebuilds from here only when package.json or package-lock.json changes,
+# not on every source edit — so 'docker compose up --build' reuses this layer
+# on every non-dependency change.
+COPY package.json package-lock.json ./
+
+# Install all dependencies (dev dependencies included — Vite, TypeScript, etc.
+# are devDependencies but are required by the dev server).
+# npm ci (not npm install) is used: it enforces package-lock.json exactly,
+# making builds reproducible across environments and CI.
+# The resulting node_modules is the image content that Docker seeds into the
+# 'hr-frontend-node-modules' named volume on first container creation.
+RUN npm ci
+
+# At runtime, docker-compose bind-mounts ./hr-frontend → /app, overlaying this
+# directory with the live host source. The 'hr-frontend-node-modules' named
+# volume sits on top of the bind-mount at /app/node_modules, preserving the
+# Alpine-built module binaries (native addons differ by OS/libc variant and
+# cannot be shared with the host's node_modules, if any).
+
+EXPOSE 5173
+
+# --host 0.0.0.0 makes Vite listen on all interfaces inside the container, not
+# just 127.0.0.1 (Vite's default). Without this flag, curl http://localhost:5173
+# from the host gets ECONNREFUSED even though the port is published, because the
+# Vite process itself only accepts connections from loopback inside the container.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

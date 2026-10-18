@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <!--
+      Spring Boot 3.4.x LTS patch — latest stable 3.4 as of project baseline (R-CODE-1).
+      Flyway 10.20.1, Testcontainers 1.20.6 and Hibernate 6.6.x are all managed by this BOM.
+    -->
+    <version>3.4.13</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.cubeworks</groupId>
+  <artifactId>hr-backend</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <packaging>jar</packaging>
+  <description>CubeWorks HR — Spring Boot BFF (Backend For Frontend)</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <!--
+      springdoc-openapi 2.x targets Spring Boot 3.x; version 2.9.1 is the latest 2.x stable.
+      NOT managed by the Spring Boot BOM, so an explicit version is required here.
+    -->
+    <springdoc.version>2.9.1</springdoc.version>
+  </properties>
+
+  <dependencies>
+
+    <!-- ======== Web / API ======== -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Bean Validation (@Valid on controller parameters, R-API-3 validation errors) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- SMTP sending for EmailOutboxSenderJob (R-ARC-6). Replaces the Gate 2 stub that only
+         logged what it would send — found live, 2026-10-18, that no e-mail ever actually
+         reached Mailcatcher. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-mail</artifactId>
+    </dependency>
+
+    <!-- ======== Persistence ======== -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+
+    <!--
+      Flyway core — version managed by Spring Boot BOM (10.20.1).
+      No hard-coded version here; the BOM is the single source of truth.
+    -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+
+    <!--
+      Flyway 10+ requires this separate module for PostgreSQL support.
+      Version is also managed by the Spring Boot BOM (same as flyway-core).
+    -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+
+    <!-- PostgreSQL JDBC driver — runtime only, not needed at compile time -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- ======== Security ======== -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
+    <!--
+      OAuth2 Resource Server — validates Keycloak-issued JWTs via the realm JWKS endpoint.
+      The issuer-uri in application.yml triggers OIDC discovery at startup in production.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+
+    <!-- ======== Observability ======== -->
+    <!--
+      Actuator exposes /actuator/health only (configured in application.yml).
+      /actuator/env and /actuator/beans are NOT exposed without authentication (CLAUDE.md §2.4).
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- ======== Excel export (A05 GET /api/employees/export) ======== -->
+    <!--
+      Apache POI OOXML — generates .xlsx workbooks for the employee list export (A05).
+      Version managed by the dependencyManagement block above.
+    -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.3.0</version>
+    </dependency>
+
+    <!-- ======== API Documentation ======== -->
+    <!--
+      SpringDoc OpenAPI 2.x — Swagger UI at /swagger-ui.html, spec at /v3/api-docs.
+      Version must be declared explicitly (not in Spring Boot BOM).
+    -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>${springdoc.version}</version>
+    </dependency>
+
+    <!-- ======== Test ======== -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Spring Security test utilities (mock JWT, etc.) for later gate tests -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+      Testcontainers — versions managed by Spring Boot BOM via testcontainers-bom import (1.20.6).
+      The PostgreSQL module starts a real Postgres 16 container for integration tests.
+    -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+      Awaitility — used in gate-2 integration tests to poll async outcomes
+      (e.g. undo-window expiry in AC-04 / AC-19). Version managed by
+      Spring Boot BOM so no explicit version is needed here.
+    -->
+    <dependency>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <!-- ======== Dependency Management (versions not in BOM) ======== -->
+  <dependencyManagement>
+    <dependencies>
+      <!--
+        Apache POI BOM — aligns all poi-* artifacts to the same version.
+        Not in the Spring Boot BOM; declared here so all poi dependencies below
+        inherit the version without repeating it.
+      -->
+      <dependency>
+        <groupId>org.apache.poi</groupId>
+        <artifactId>poi-ooxml</artifactId>
+        <version>5.3.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <plugins>
+      <!--
+        Spring Boot Maven plugin — packages the application as an executable fat JAR.
+        -Duser.timezone=UTC: see the matching surefire argLine comment below for why.
+      -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <jvmArguments>-Duser.timezone=UTC</jvmArguments>
+        </configuration>
+      </plugin>
+
+      <!--
+        -Duser.timezone=UTC as an actual JVM startup argument, not just TimeZone.setDefault()
+        in application code: pgjdbc reads the "user.timezone" system property directly when
+        negotiating the session TimeZone with Postgres, so only changing the cached
+        java.util.TimeZone default (which does not touch this system property) does not
+        prevent "FATAL: invalid value for parameter "TimeZone": ..." on a host whose OS
+        timezone is an older IANA alias such as "Asia/Calcutta". Setting it here applies
+        before any class loads, which is the one point guaranteed to work for every test JVM.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <argLine>-Duser.timezone=UTC</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

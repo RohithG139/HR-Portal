@@ -1,0 +1,123 @@
+{
+    "permissions": {
+        "allow": [
+            "Read",
+            "Edit",
+            "Glob",
+            "Grep",
+            "Bash(./mvnw *)",
+            "Bash(./mvnw.cmd *)",
+            "Bash(mvnw.cmd *)",
+            "Bash(mvn *)",
+            "Bash(java -version)",
+            "Bash(java --version)",
+            "Bash(java -jar *)",
+            "Bash(node -v)",
+            "Bash(npm -v)",
+            "Bash(npm run *)",
+            "Bash(npm test)",
+            "Bash(npm test *)",
+            "Bash(npm install *)",
+            "Bash(npm ci)",
+            "Bash(npx tsc *)",
+            "Bash(npx vitest *)",
+            "Bash(npx playwright *)",
+            "Bash(npx prettier *)",
+            "Bash(docker info)",
+            "Bash(docker ps)",
+            "Bash(docker ps *)",
+            "Bash(docker logs *)",
+            "Bash(docker compose ps)",
+            "Bash(docker compose ps *)",
+            "Bash(docker compose logs *)",
+            "Bash(docker compose up *)",
+            "Bash(docker compose build *)",
+            "Bash(docker compose config)",
+            "Bash(docker build *)",
+            "Bash(docker image *)",
+            "Bash(psql *)",
+            "Bash(git status)",
+            "Bash(git diff *)",
+            "Bash(git log *)",
+            "Bash(git branch *)"
+        ],
+        "ask": [
+            "Bash(docker compose down *)",
+            "Bash(docker compose down)",
+            "Bash(docker compose restart *)",
+            "Bash(docker stop *)",
+            "Bash(docker rm *)",
+            "Bash(docker run *)",
+            "Bash(pg_dump *)",
+            "Bash(git add *)",
+            "Bash(git checkout *)",
+            "Bash(git commit *)",
+            "Bash(git push *)"
+        ],
+        "deny": [
+            "Read(./.env)",
+            "Read(./**/.env)",
+            "Edit(./docs/source/**)",
+            "Write(./docs/source/**)",
+            "Bash(rm -rf *)",
+            "Bash(rm -r *)",
+            "Bash(rm -fr *)",
+            "Bash(rm -f /*)",
+            "Bash(git push --force *)",
+            "Bash(git push -f *)",
+            "Bash(git push --force-with-lease *)",
+            "Bash(git reset --hard *)",
+            "Bash(docker volume rm *)",
+            "Bash(docker volume prune *)",
+            "Bash(docker system prune *)",
+            "Bash(docker compose down -v *)",
+            "Bash(docker compose down --volumes *)",
+            "Bash(./mvnw flyway:clean *)",
+            "Bash(mvn flyway:clean *)",
+            "Bash(dropdb *)",
+            "Bash(chmod 777 *)",
+            "Bash(curl * | sh)",
+            "Bash(curl * | bash)",
+            "Bash(wget * | sh)",
+            "Bash(wget * | bash)"
+        ]
+    },
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash -c '[ -f .claude/hooks/block-dangerous.sh ] && bash .claude/hooks/block-dangerous.sh || bash ../.claude/hooks/block-dangerous.sh'"
+                    }
+                ]
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write|NotebookEdit",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash -c '[ -f .claude/hooks/format-on-save.sh ] && bash .claude/hooks/format-on-save.sh || bash ../.claude/hooks/format-on-save.sh'"
+                    }
+                ]
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "bash -c '[ -f .claude/hooks/verify-output.sh ] && bash .claude/hooks/verify-output.sh || bash ../.claude/hooks/verify-output.sh'"
+                    },
+                    {
+                        "type": "command",
+                        "command": "bash -c '[ -f .claude/hooks/desktop-notify.sh ] && bash .claude/hooks/desktop-notify.sh || bash ../.claude/hooks/desktop-notify.sh'"
+                    }
+                ]
+            }
+        ]
+    }
+}

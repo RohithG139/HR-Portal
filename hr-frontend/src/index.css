@@ -1,0 +1,25 @@
+/*
+ * CubeWorks HR — global base styles.
+ * Tailwind CSS (preflight + utilities) via the @tailwindcss/vite plugin
+ * (see vite.config.ts). Layout and component styles live in Tailwind
+ * classes throughout the component tree; this file adds only the font
+ * stack and the #root flex shell that Tailwind's preflight doesn't set.
+ */
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Fixed light theme (the wireframe has no dark variant) regardless of the
+     OS/browser color-scheme preference — keeps native form controls (e.g.
+     checkboxes, scrollbars) from rendering in a dark UA style we don't style for. */
+  color-scheme: light;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}

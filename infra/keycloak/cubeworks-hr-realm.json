@@ -1,0 +1,146 @@
+{
+  "realm": "cubeworks-hr",
+  "enabled": true,
+  "displayName": "CubeWorks HR",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": false,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+
+  "loginTheme": "cubeworks",
+  "passwordPolicy": "regexPattern(^(?=.*[A-Za-z])(?=.*[0-9]).{12,}$) and notEmail",
+
+  "smtpServer": {
+    "host": "host.docker.internal",
+    "port": "1025",
+    "from": "noreply@cubeworks.internal",
+    "fromDisplayName": "CubeWorks HR",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+
+  "roles": {
+    "realm": [
+      {
+        "name": "HR",
+        "description": "HR staff — manage employee lifecycle, create accounts, run appraisals",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "MANAGER",
+        "description": "Line manager — approve onboarding, run KPI/appraisal cycles for their team",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "EMPLOYEE",
+        "description": "Regular employee — view own profile, complete self-assessment tasks",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "IT_ADMIN",
+        "description": "IT administrator — fulfil IT-provisioning tasks in the onboarding checklist",
+        "composite": false,
+        "clientRole": false
+      }
+    ]
+  },
+
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "username": "hr1",
+      "email": "hr@demo.com",
+      "firstName": "hr",
+      "lastName": "1",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "Password1234", "temporary": false }
+      ],
+      "realmRoles": ["HR"]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "username": "manager1",
+      "email": "manager.e2e.test@cubeworks.test",
+      "firstName": "Manager",
+      "lastName": "Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "Password1234", "temporary": false }
+      ],
+      "realmRoles": ["MANAGER"]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "username": "employee1",
+      "email": "jesse.e2e.test@outlook.com",
+      "firstName": "Jesse",
+      "lastName": "Willems",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "Password1234", "temporary": false }
+      ],
+      "realmRoles": ["EMPLOYEE"]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "username": "itadmin1",
+      "email": "itadmin1@cubeworks.test",
+      "firstName": "IT",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "Password1234", "temporary": false }
+      ],
+      "realmRoles": ["IT_ADMIN"]
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "hr-frontend",
+      "name": "CubeWorks HR — React SPA",
+      "description": "Public OIDC client for the hr-frontend React app (Vite dev server on localhost:5173). Registered here as a placeholder; full scopes and mappers are configured in F01 gate 2 once hr-backend also needs a confidential client.",
+      "enabled": true,
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "hr-backend",
+      "name": "CubeWorks HR — Spring Boot service account",
+      "description": "Confidential client-credentials client. hr-backend uses it to get its own token for calling the CaseFabric engine's REST API (engine trusts this realm additively alongside Dex) and for scheduled jobs with no end-user token to borrow.",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "hr-backend-dev-secret-change-for-prod",
+      "protocol": "openid-connect"
+    }
+  ]
+}

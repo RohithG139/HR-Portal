@@ -1,0 +1,125 @@
+/*
+ * CubeWorks HR — login page visual restyle (S13, matches wireframe `#login-view`).
+ * Loaded after keycloak.v2's own css/styles.css (theme.properties `styles`), so these
+ * rules win on shared selectors. Re-skins keycloak.v2's default dark PatternFly login
+ * page into the app's light theme + brand colors (hr-frontend/src/index.css, Card.tsx) —
+ * no Keycloak behaviour changed, pure visual override.
+ *
+ * Color values match the wireframe's CSS variables
+ * (.claude/docs/source/CubeWorks_HR_interactive_wireframes_v6_1.html):
+ *   --brand-blue #1e3a8a, --bg-page #f3f4f6, --text-primary #111827,
+ *   --text-secondary #4b5563, --border-color #e5e7eb.
+ * The primary button uses green (#16a34a / #15803d hover), matching every
+ * Save/Submit button already built in hr-frontend (R-UI-1), not the wireframe's
+ * own blue Save/Submit variable — hr-frontend's actual shipped convention wins.
+ */
+
+/* Light page background, not the dark polygon image — regardless of the browser's
+   prefers-color-scheme (template.ftl toggles .pf-v5-theme-dark on <html> for that). */
+.login-pf body,
+body#keycloak-bg,
+html.pf-v5-theme-dark body#keycloak-bg {
+  background: #f3f4f6 !important;
+  height: auto;
+  min-height: 100%;
+}
+
+/* Centered card shell — sizing/position only; .pf-v5-c-login__main (below) is the
+   element that actually paints the card background, so no background here. */
+.pf-v5-c-login__container {
+  grid-template-columns: minmax(0, 32rem);
+  max-width: 32rem;
+  margin: 4rem auto;
+}
+
+/* The actual login card. PatternFly paints this element's background from
+   --pf-v5-global--BackgroundColor--light-100, which :where(.pf-v5-theme-dark) in
+   patternfly-addons.css redefines to a dark value when the OS prefers dark — hence
+   the explicit color (not just a lighter variable) and !important here, to keep
+   the card white regardless of that class landing on <html>. */
+.pf-v5-c-login__main {
+  background-color: #ffffff !important;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 16px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Brand row: "CW" badge + CubeWorks HR, replacing keycloak.v2's uppercase white title */
+#kc-header-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #111827 !important;
+  margin-bottom: 1.5rem;
+}
+#kc-header-wrapper::before {
+  content: "CW";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  background: #1e3a8a;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.8125rem;
+}
+
+/* Page title ("Login") */
+#kc-page-title,
+.pf-v5-c-title {
+  color: #111827;
+  font-weight: 700;
+}
+
+/* Form labels */
+.pf-v5-c-form__label-text {
+  color: #374151;
+  font-weight: 500;
+}
+.pf-v5-c-form__label-required {
+  color: #dc2626;
+}
+
+/* Text/password inputs */
+.pf-v5-c-form-control,
+.pf-v5-c-form-control input {
+  background: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+.pf-v5-c-form-control:focus-within {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px #2563eb;
+}
+
+/* Primary (Login) button — green, matching every Save/Submit button already
+   built in hr-frontend (bg-green-600 hover:bg-green-700, R-UI-1). */
+.pf-v5-c-button.pf-m-primary {
+  background-color: #16a34a !important;
+  border-color: #16a34a !important;
+}
+.pf-v5-c-button.pf-m-primary:hover {
+  background-color: #15803d !important;
+}
+
+/* "Forgot password?" link */
+#kc-form a,
+.pf-v5-c-login__main a {
+  color: #2563eb;
+}
+
+/* Error alert (wrong credentials) */
+.pf-v5-c-alert.pf-m-danger {
+  background: #fee2e2;
+  border-color: #dc2626;
+}
+.pf-v5-c-alert.pf-m-danger .kc-feedback-text {
+  color: #991b1b;
+}

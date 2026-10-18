@@ -1,0 +1,171 @@
+// =============================================================================
+// Jenkins Declarative Pipeline Template
+// Adapt: agent label, tool names, credentials IDs, cluster/service names.
+// Credentials: configure in Jenkins → Manage Jenkins → Credentials.
+//              Never hardcode secrets in this file.
+// =============================================================================
+
+pipeline {
+    agent any   // or: agent { label 'docker' }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 1, unit: 'HOURS')
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        // Adapt these — never hardcode actual values here
+        ECR_REGION        = 'us-east-1'
+        ECR_REPOSITORY    = 'my-app'
+        ECS_CLUSTER_TEST  = 'my-cluster-test'
+        ECS_SERVICE_TEST  = 'my-service-test'
+        ECS_CLUSTER_PROD  = 'my-cluster-prod'
+        ECS_SERVICE_PROD  = 'my-service-prod'
+    }
+
+    stages {
+
+        // ── Stage 1: Checkout ─────────────────────────────────────────────
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        // ── Stage 2: Automated Tests (MANDATORY — runs on every branch) ───
+        stage('Automated Tests') {
+            steps {
+                // Java / Maven
+                sh './mvnw checkstyle:check spotbugs:check -q'
+                sh './mvnw verify -q'
+
+                // Python alternative (comment out Maven above)
+                // sh 'pip install poetry && poetry install'
+                // sh 'ruff check . && mypy .'
+                // sh 'pytest --tb=short'
+
+                // Node alternative
+                // sh 'npm ci'
+                // sh 'npm run lint && npx tsc --noEmit'
+                // sh 'npx vitest run'
+            }
+            // Build fails here if tests fail — downstream stages do not run.
+        }
+
+        // ── Stage 3: Build & Push Docker Image ────────────────────────────
+        // Runs on develop and main only; skipped on feature branches.
+        stage('Build & Push Image') {
+            when {
+                anyOf {
+                    branch 'develop'
+                    branch 'main'
+                }
+            }
+            steps {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh """
+                        aws configure set aws_access_key_id \$AWS_ACCESS_KEY_ID
+                        aws configure set aws_secret_access_key \$AWS_SECRET_ACCESS_KEY
+                        aws configure set default.region ${ECR_REGION}
+
+                        ECR_ACCOUNT=\$(aws sts get-caller-identity --query Account --output text)
+                        ECR_URL=\$ECR_ACCOUNT.dkr.ecr.${ECR_REGION}.amazonaws.com
+
+                        aws ecr get-login-password --region ${ECR_REGION} | \
+                            docker login --username AWS --password-stdin \$ECR_URL
+
+                        docker build -t \$ECR_URL/${ECR_REPOSITORY}:\${BUILD_NUMBER} .
+                        docker push \$ECR_URL/${ECR_REPOSITORY}:\${BUILD_NUMBER}
+                    """
+                }
+            }
+        }
+
+        // ── Stage 4: Deploy to Test (HITL gate) ──────────────────────────
+        stage('Deploy to Test') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                // ← HITL GATE: pipeline pauses here until a human approves
+                input(
+                    message: 'Approve deployment to Test environment?',
+                    submitter: 'devops-team',
+                    ok: 'Deploy to Test'
+                )
+
+                timeout(time: 30, unit: 'MINUTES') {
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        sh """
+                            aws configure set aws_access_key_id \$AWS_ACCESS_KEY_ID
+                            aws configure set aws_secret_access_key \$AWS_SECRET_ACCESS_KEY
+                            aws configure set default.region ${ECR_REGION}
+
+                            aws ecs update-service \
+                                --cluster ${ECS_CLUSTER_TEST} \
+                                --service ${ECS_SERVICE_TEST} \
+                                --force-new-deployment \
+                                --region ${ECR_REGION}
+                        """
+                    }
+                }
+            }
+        }
+
+        // ── Stage 5: Deploy to Production (HITL gate) ─────────────────────
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                // ← HITL GATE: pipeline pauses — requires explicit human approval
+                input(
+                    message: 'Approve deployment to PRODUCTION?',
+                    submitter: 'devops-leads',
+                    ok: 'Deploy to Production'
+                )
+
+                timeout(time: 60, unit: 'MINUTES') {
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        sh """
+                            aws configure set aws_access_key_id \$AWS_ACCESS_KEY_ID
+                            aws configure set aws_secret_access_key \$AWS_SECRET_ACCESS_KEY
+                            aws configure set default.region ${ECR_REGION}
+
+                            aws ecs update-service \
+                                --cluster ${ECS_CLUSTER_PROD} \
+                                --service ${ECS_SERVICE_PROD} \
+                                --force-new-deployment \
+                                --region ${ECR_REGION}
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully on branch: ${env.BRANCH_NAME}"
+        }
+        failure {
+            echo "Pipeline FAILED on branch: ${env.BRANCH_NAME} — Build #${env.BUILD_NUMBER}"
+            // Add notification: Slack, email, PagerDuty, etc.
+            // slackSend channel: '#deploys', color: 'danger',
+            //     message: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)"
+        }
+        aborted {
+            echo "Pipeline aborted (deployment approval timeout or manual abort)."
+        }
+    }
+}

@@ -1,0 +1,45 @@
+# CubeWorks HR — root .gitignore
+# hr-backend/ and hr-frontend/ also carry their own .gitignore for stack-specific rules.
+
+# --- Secrets / local environment overrides -----------------------------------
+# Never commit real env files or tokens. Example/template files are the exception.
+.env
+.env.*
+!.env.example
+!**/.env.example
+token.txt
+*.pem
+*.key
+*credentials*
+*secret*
+
+# --- CaseFabric engine (separate git repo, never nested into this one) -------
+# casefabric/getting-started is CaseFabric's own repo (its own remote, its own
+# history, CLAUDE.md §1.3). It is cloned locally at this path for dev, not
+# tracked inside the hr app's repo.
+/casefabric/
+
+# --- Java / Maven (hr-backend) -------------------------------------------------
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# --- Node / Vite (hr-frontend) -------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+
+# --- IDE / OS -------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# --- Logs ------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

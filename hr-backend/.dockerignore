@@ -1,0 +1,38 @@
+# ── Build artifacts ───────────────────────────────────────────────────────────
+# Maven's compiled output — never needed in the build context because Dockerfile.dev
+# runs ./mvnw spring-boot:run against the bind-mounted source at runtime.
+# Excluding target/ avoids sending hundreds of MB of class files and JARs to the
+# Docker daemon on every 'docker compose build'.
+target/
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Secrets / local overrides ─────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── IDE and OS noise ──────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+**/*.log
+logs/
+
+# ── Docker files (not needed inside the image context) ───────────────────────
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ── CI / docs ────────────────────────────────────────────────────────────────
+.github/
+.gitlab/
+Jenkinsfile
+*.md
+README*

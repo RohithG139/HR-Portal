@@ -1,0 +1,284 @@
+# CubeWorks HR application — infra + dev containers (Postgres, Keycloak, backend, frontend).
+#
+# This is a SEPARATE compose project from casefabric/getting-started/docker-compose.yml,
+# which belongs to the CaseFabric engine (its own git repo) and is never edited here.
+# Run both stacks side by side in dev:
+#   docker compose -f casefabric/getting-started/docker-compose.yml up -d
+#   docker compose up -d
+#
+# hr-backend and hr-frontend run as DEV containers with bind-mounted source trees:
+#   - hr-frontend: Vite HMR delivers changes to the browser in real time (no restart needed).
+#   - hr-backend: ./mvnw spring-boot:run compiles and starts but does NOT watch for
+#     file changes without spring-boot-devtools (not yet in pom.xml — flagged as a
+#     follow-up). Java changes currently require: docker compose restart hr-backend.
+#
+# VITE_* env vars point at localhost published ports (not Docker service names) because
+# the browser — running on the host — makes those HTTP calls directly. Docker-internal
+# names like 'http://hr-backend:8080' are unreachable from the host browser.
+#
+# Outgoing e-mail is caught by the engine stack's existing Mailcatcher (localhost:1025/1080);
+# this file does not run a second one.
+#
+services:
+  hr-db-postgres:
+    image: postgres:16
+    hostname: hr-db-postgres
+    container_name: hr-db-postgres
+    environment:
+      POSTGRES_USER: ${HR_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${HR_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${HR_DB_NAME:-hr_app}
+    ports:
+      - "5433:5432"
+    expose:
+      - 5432
+    volumes:
+      - ./infra/postgres-initdb:/docker-entrypoint-initdb.d
+      - hr-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HR_DB_USER:-postgres} -d ${HR_DB_NAME:-hr_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - hr_app_network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    # --import-realm loads every JSON file found under /opt/keycloak/data/import/
+    # on each container start, so the cubeworks-hr realm (roles, clients, and the
+    # fixed-id test users below) is ready without manual admin-console setup.
+    #
+    # CONFIRMED LIVE (2026-10-18): contrary to what this comment used to say, the
+    # import is NOT reliably skipped just because the realm already exists — a
+    # restart has been observed logging both "Strategy: OVERWRITE_EXISTING" (full
+    # re-import, wiping anything added only via the admin console/API since the
+    # last import) and "Strategy: IGNORE_EXISTING" / "Import skipped" (keeps live
+    # state) across otherwise-identical `docker compose restart keycloak` calls —
+    # Keycloak's dev-mode embedded database isn't volume-mounted, so which one you
+    # get depends on whether that H2 state actually survived the restart. Moral:
+    # never rely on admin-console-only state (ad hoc users, role grants) surviving
+    # a Keycloak restart. cubeworks-hr-realm.json's own "users" block (hr1/
+    # manager1/employee1/itadmin1, one per AppRole, fixed ids, password
+    # "Password1234") is the only thing guaranteed to come back either way —
+    # matching hr.employee.idp_subject rows exist for exactly those four ids.
+    command: ["start-dev", "--import-realm"]
+    hostname: keycloak
+    container_name: keycloak
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Off by default in Keycloak 26; without it /health/ready 404s and the healthcheck below never passes.
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    expose:
+      - 8080
+      - 9000
+    # S13 (2026-10-16): the realm's smtpServer points at host.docker.internal:1025 — the
+    # engine stack's Mailcatcher (casefabric/getting-started/docker-compose.yml), reached via
+    # its published host port since the two compose projects share no Docker network
+    # (CLAUDE.md §1.3: "no second mailcatcher"). host.docker.internal resolves automatically
+    # on Docker Desktop (Windows/Mac); extra_hosts makes it resolve on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Realm definition: four realm roles (HR, MANAGER, EMPLOYEE, IT_ADMIN),
+      # registration disabled, a password policy matching FRD-01 §5, and a
+      # minimal hr-frontend public OIDC client for the Vite dev server.
+      # Mounted read-only so the running container cannot mutate the source file.
+      - ./infra/keycloak/cubeworks-hr-realm.json:/opt/keycloak/data/import/cubeworks-hr-realm.json:ro
+      # S13: custom login theme carrying FRD-01 §5's exact message wording
+      # (parent=keycloak.v2, overrides only theme/login/messages/messages_en.properties).
+      - ./infra/keycloak/themes/cubeworks:/opt/keycloak/themes/cubeworks:ro
+    healthcheck:
+      # Probe Keycloak's health-readiness endpoint. With KC_HEALTH_ENABLED=true, Keycloak 26
+      # serves it on the separate management port 9000, not the public 8080 port. Returns
+      # HTTP 200 only after the realm import finishes and the server is fully ready.
+      # The image has neither curl nor wget (minimal RHEL base), so this uses bash's built-in
+      # /dev/tcp to make a raw HTTP GET and check for a 200 response line.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          echo -e 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -n1 <&3 | grep -q '200'
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - hr_app_network
+
+  # ── DEV container: Spring Boot backend ──────────────────────────────────────
+  # Runs ./mvnw spring-boot:run against the bind-mounted host source. Maven
+  # compiles from the live source tree so there is no stale JAR to rebuild;
+  # restart the container to pick up Java source changes (see header comment).
+  hr-backend:
+    build:
+      context: ./hr-backend
+      dockerfile: Dockerfile.dev
+    container_name: hr-backend
+    volumes:
+      # Bind-mount: live source tree on the host overlays /app inside the container.
+      # Maven reads and compiles whatever is on disk at container startup.
+      - ./hr-backend:/app
+      # Named volume for the Maven local repo — persists downloaded JARs across
+      # container recreations so 'docker compose up' after a restart is fast.
+      # On first creation Docker seeds this volume from the image layer populated
+      # by 'dependency:go-offline' in Dockerfile.dev (volume-from-image seeding).
+      - hr-backend-m2:/root/.m2
+    ports:
+      - "8080:8080"
+    environment:
+      # Override the application.yml default so the JDBC URL uses the Docker
+      # service name (hr-db-postgres) at the container-internal Postgres port
+      # (5432), not the published host port (5433). Spring Boot's relaxed env-var
+      # binding picks this up automatically — no application.yml change needed.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://hr-db-postgres:5432/hr_app
+      # JWT issuer / JWKS split — the key correctness decision for containerised auth:
+      #
+      # Problem: tokens issued to the browser carry iss=http://localhost:8180/...
+      # because Keycloak (start-dev mode) derives the issuer from the request Host
+      # header, and the browser always hits the published port on localhost. If we
+      # also set SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI to the Docker-
+      # internal address (http://keycloak:8080/...) the iss claim would never match
+      # and every real token would be rejected with 401.
+      #
+      # Solution: leave issuer-uri at its application.yml default so the iss claim
+      # validation accepts http://localhost:8180/... tokens unchanged. Set only
+      # jwk-set-uri to the Docker-internal URL so the backend can actually reach
+      # Keycloak's JWKS endpoint for signature verification (http://localhost:8180
+      # inside the container would route to the backend itself, not Keycloak).
+      #
+      # Spring's OAuth2ResourceServerJwtConfiguration uses jwk-set-uri directly
+      # when it is set, skipping OIDC discovery but still validating iss against
+      # the application.yml issuer-uri — the officially supported split.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/cubeworks-hr/protocol/openid-connect/certs
+      # CaseFabric engine connection (2026-10-16, Wave 1). The engine is a different, never-
+      # merged compose project (casefabric/getting-started) — reached via host.docker.internal
+      # and its published port, same cross-project pattern as the keycloak service's SMTP
+      # config above. The Keycloak token URL uses the Docker service name (not localhost or
+      # host.docker.internal): hr-backend's own client-credentials token must carry
+      # iss=http://keycloak:8080/... to match the engine's own OIDC config for this realm
+      # (casefabric/getting-started/src/conf/local.conf) — confirmed live, see
+      # RealCaseEngineClient's class doc for the full reasoning.
+      CUBEWORKS_ENGINE_BASE_URL: http://host.docker.internal:2027
+      CUBEWORKS_ENGINE_KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/cubeworks-hr/protocol/openid-connect/token
+      # Mailcatcher (casefabric/getting-started/docker-compose.yml, SMTP port 1025). Unlike
+      # the engine connection above, this is NOT reached via host.docker.internal: port 1025
+      # is only `expose`d on that project's own network, never published to the host (only
+      # Mailcatcher's web UI, 1080, is) — found live, 2026-10-18. hr-backend instead joins
+      # that network directly (`engine_stack_network` below) and addresses the container by
+      # its Docker service name. Also wires EmailOutboxSenderJob's now-real SMTP client
+      # (Gate 2 had only stubbed/logged the send, never actually delivering anything).
+      SPRING_MAIL_HOST: mailcatcher
+    depends_on:
+      # Wait for Postgres to accept connections before Spring Boot starts Flyway.
+      hr-db-postgres:
+        condition: service_healthy
+      # Wait for the realm import to finish before the backend fetches JWKS.
+      # Without this, startup logs show a connection-refused error against Keycloak
+      # that Spring retries — harmless but noisy; the guard eliminates it.
+      keycloak:
+        condition: service_healthy
+    # host.docker.internal resolves the Docker host IP from inside the container.
+    # Required (as a future-proofing step) for when the CaseFabric engine connection
+    # (port 2027) is wired up — matching the same pattern already used by the
+    # keycloak service above for its SMTP config. Docker Desktop (Windows/Mac) adds
+    # this automatically; extra_hosts ensures it resolves on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Healthcheck probes the Spring Boot Actuator health endpoint.
+    # /actuator/health checks: JDBC pool connectivity + Flyway migration status.
+    # start_period is generous: Maven compilation + Flyway + Spring context
+    # initialisation on a cold start (with empty .m2 volume) can take 3+ minutes.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks:
+      - hr_app_network
+      # Joins the CaseFabric engine stack's network directly so it can reach Mailcatcher's
+      # SMTP port (1025, not published to the host — see the network's own comment below).
+      - engine_stack_network
+
+  # ── DEV container: React/Vite frontend ──────────────────────────────────────
+  # Runs Vite's dev server with HMR. Source edits on the host trigger an instant
+  # browser refresh via WebSocket — no container restart needed for JS/TSX changes.
+  hr-frontend:
+    build:
+      context: ./hr-frontend
+      dockerfile: Dockerfile.dev
+    container_name: hr-frontend
+    volumes:
+      # Bind-mount: live source tree on the host overlays /app inside the container.
+      - ./hr-frontend:/app
+      # Named volume for node_modules. Sits on top of the bind-mount so the
+      # Alpine-compiled native binaries (esbuild, rollup) are not replaced by
+      # the host's node_modules (compiled for the host OS and libc variant).
+      # Docker seeds this volume from the npm ci layer in Dockerfile.dev on first
+      # container creation, so subsequent starts skip a full 'npm install'.
+      - hr-frontend-node-modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      # VITE_* values are inlined into the served JS by Vite at startup.
+      # All four point at localhost published ports — the browser (running on the
+      # host) makes these calls directly, so Docker service names would not resolve.
+      # These match the defaults in .env.example exactly; a local .env file can
+      # override them without touching this compose file.
+      VITE_API_BASE_URL: http://localhost:8080/api
+      VITE_KEYCLOAK_URL: http://localhost:8180
+      VITE_KEYCLOAK_REALM: cubeworks-hr
+      VITE_KEYCLOAK_CLIENT_ID: hr-frontend
+    depends_on:
+      # Wait for the backend to be healthy before Vite starts. The browser would
+      # recover from a momentary backend absence on its own, but the guard avoids
+      # confusing 'network error' toasts on the very first page load.
+      hr-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hr_app_network
+
+volumes:
+  hr-db-data:
+    driver: local
+  # Maven local repository for hr-backend. Seeded from the image on first creation
+  # (see Dockerfile.dev dependency:go-offline layer); persists across restarts.
+  hr-backend-m2:
+    driver: local
+  # Container-installed node_modules for hr-frontend. Seeded from the image on
+  # first creation (see Dockerfile.dev npm ci layer); isolated from host OS binaries.
+  hr-frontend-node-modules:
+    driver: local
+
+networks:
+  hr_app_network:
+    driver: bridge
+    ipam:
+      config:
+        # Explicit /24 avoids Docker's automatic subnet-discovery scan, which can
+        # hang on Windows when several bridge networks already occupy the 172.x range.
+        - subnet: 172.22.0.0/24
+  # Reference to the CaseFabric engine stack's own network (casefabric/getting-started/
+  # docker-compose.yml, compose project name "getting-started"). Declared `external` so
+  # Docker Compose attaches to the network that project already created rather than trying
+  # to create/own it here — this file never touches that project's own docker-compose.yml
+  # (CLAUDE.md §1.3 MUST), it only joins a network the other project already published.
+  #
+  # Why this is needed: Mailcatcher's SMTP port (1025) is only `expose`d on that project's
+  # own network, not published to the host (only its web UI, port 1080, is) — found live,
+  # 2026-10-18, trying to reach host.docker.internal:1025 for EmailOutboxSenderJob's real
+  # SMTP send. host.docker.internal only reaches ports a container actually publishes to the
+  # host, which 1025 never was. Joining the network directly and addressing the container by
+  # its Docker service name (`mailcatcher:1025`) reaches it without needing a host port at all.
+  engine_stack_network:
+    external: true
+    name: getting-started_getting_started_network

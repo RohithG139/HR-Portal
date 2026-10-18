@@ -1,0 +1,53 @@
+#!/bin/sh
+# ----------------------------------------------------------------------------
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+# ----------------------------------------------------------------------------
+
+# Maven Wrapper shell script — downloads and caches Apache Maven if not present,
+# then delegates to it. Requires curl or wget plus unzip.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WRAPPER_PROPERTIES="${SCRIPT_DIR}/.mvn/wrapper/maven-wrapper.properties"
+
+# Read distributionUrl from maven-wrapper.properties
+DISTRIBUTION_URL=$(grep "^distributionUrl" "${WRAPPER_PROPERTIES}" | cut -d'=' -f2- | tr -d '\r')
+
+# Extract Maven version from the URL (e.g. apache-maven-3.9.9-bin.zip → 3.9.9)
+MAVEN_VERSION=$(echo "${DISTRIBUTION_URL}" | sed 's/.*apache-maven-\([0-9.]*\)-.*/\1/')
+
+DIST_DIR="${HOME}/.m2/wrapper/dists/apache-maven-${MAVEN_VERSION}"
+
+if [ ! -d "${DIST_DIR}" ]; then
+    echo "Downloading Apache Maven ${MAVEN_VERSION} from ${DISTRIBUTION_URL}"
+    mkdir -p "${HOME}/.m2/wrapper/dists"
+    TEMP_ZIP="${TMPDIR:-/tmp}/maven-wrapper-${MAVEN_VERSION}.zip"
+    if command -v curl > /dev/null 2>&1; then
+        curl -fsSL "${DISTRIBUTION_URL}" -o "${TEMP_ZIP}"
+    elif command -v wget > /dev/null 2>&1; then
+        wget -q "${DISTRIBUTION_URL}" -O "${TEMP_ZIP}"
+    else
+        echo "ERROR: curl or wget is required to download Apache Maven" >&2
+        exit 1
+    fi
+    unzip -q "${TEMP_ZIP}" -d "${HOME}/.m2/wrapper/dists/"
+    rm -f "${TEMP_ZIP}"
+fi
+
+exec "${DIST_DIR}/bin/mvn" "$@"

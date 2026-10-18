@@ -1,0 +1,66 @@
+# =============================================================================
+# hr-backend — DEV-ONLY Dockerfile (not for production use).
+#
+# This is NOT a multi-stage image. The full JDK is intentional here: Maven and
+# the Spring Boot Maven plugin need the compiler at runtime to compile and run
+# source files directly. A production image would use the multi-stage template
+# at .claude/templates/devops/Dockerfile.multistage instead.
+#
+# HOT RELOAD GAP — MUST READ BEFORE ASSUMING HOT RELOAD WORKS:
+# ./mvnw spring-boot:run compiles and starts the application but does NOT watch
+# for source-file changes on its own. True hot reload requires the
+# spring-boot-devtools artifact on the classpath, which is NOT currently in
+# pom.xml. Without it, source changes require a container restart:
+#   docker compose restart hr-backend
+# This is flagged as a follow-up item (add spring-boot-devtools to pom.xml).
+# hr-frontend does have HMR via Vite and hot-reloads automatically.
+# =============================================================================
+
+# Pinned to Jammy (Ubuntu 22.04) rather than Alpine: the Maven wrapper download
+# and some Spring Boot integration-test libraries have musl (Alpine) edge cases
+# that the Debian-based glibc image avoids cleanly. Not eclipse-temurin:21-jdk
+# (which floats to whatever the latest patch is); Jammy is a stable, named tag.
+FROM eclipse-temurin:21-jdk-jammy
+
+# Install curl and unzip. curl is needed by the compose healthcheck
+# (CMD-SHELL curl -f .../actuator/health). unzip is needed by the Maven wrapper
+# script (./mvnw) to extract the downloaded Maven distribution zip during the
+# dependency-resolution layer below.
+# --no-install-recommends keeps the layer minimal (no man pages, etc.).
+# The apt cache is purged in the same RUN layer to avoid caching it in the image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Dependency-caching layer ──────────────────────────────────────────────────
+# Copy only the dependency manifest and Maven wrapper before any source arrives.
+# Docker re-executes from here only when pom.xml or the wrapper files change —
+# not on every .java edit. This makes 'docker compose up --build' fast after
+# the first image build, because the dependency-resolution layer is cached.
+COPY pom.xml mvnw ./
+COPY .mvn .mvn
+
+# Windows hosts often check out the Maven wrapper without the execute bit.
+# chmod ensures the script runs inside the Linux container regardless.
+RUN chmod +x mvnw
+
+# Pre-download all declared dependencies into the Maven local repo (~/.m2).
+# When docker-compose mounts the 'hr-backend-m2' named volume at /root/.m2,
+# Docker seeds that volume from this image layer on first creation — so
+# subsequent 'docker compose up' calls skip the full dependency download.
+RUN ./mvnw dependency:go-offline -q
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+# At runtime, docker-compose bind-mounts ./hr-backend → /app, overlaying this
+# directory with the live host source tree (pom.xml, mvnw, .mvn, src/).
+# No COPY src is needed: the bind-mount supplies it at container start.
+
+EXPOSE 8080
+
+# Spring Boot Maven plugin compiles from the bind-mounted source and starts the
+# embedded Tomcat. -Duser.timezone=UTC matches the JVM arg in the plugin config
+# in pom.xml (pgjdbc reads this system property when negotiating the Postgres
+# session timezone — see the pom.xml comment for the full explanation).
+ENTRYPOINT ["./mvnw", "spring-boot:run", "-Dspring-boot.run.jvmArguments=-Duser.timezone=UTC"]

@@ -1,0 +1,106 @@
+# =============================================================================
+# Bitbucket Pipelines CI/CD Template
+# Adapt: image, deploy scripts, variable names, environment names.
+# Credentials: set in Repository Settings → Repository variables or
+#              Deployments variables (never hardcode here).
+# =============================================================================
+
+image: eclipse-temurin:21-jdk-alpine
+
+definitions:
+  caches:
+    maven: ~/.m2/repository
+
+  steps:
+    # ── Reusable: Automated Tests ─────────────────────────────────────────
+    - step: &run-tests
+        name: Automated Tests
+        caches: [maven]
+        script:
+          - ./mvnw checkstyle:check spotbugs:check -q
+          - ./mvnw verify -q
+        # Pipeline terminates immediately if this step fails.
+        # No deploy steps will run.
+
+    # ── Reusable: Build & Push Docker Image ───────────────────────────────
+    - step: &build-push-image
+        name: Build & Push Docker Image
+        services: [docker]
+        caches: [docker]
+        script:
+          # AWS ECR variant
+          - pipe: atlassian/aws-ecr-push-image:2.4.0
+            variables:
+              AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+              AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+              AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+              IMAGE_NAME: $IMAGE_NAME
+              TAGS: "$BITBUCKET_COMMIT $DEPLOY_ENV-latest"
+          # Azure ACR variant (comment out ECR pipe above, uncomment below)
+          # - pipe: microsoft/azure-acr-push:1.1.2
+          #   variables:
+          #     AZURE_APP_ID: $AZURE_APP_ID
+          #     AZURE_PASSWORD: $AZURE_PASSWORD
+          #     AZURE_TENANT_ID: $AZURE_TENANT_ID
+          #     IMAGE_NAME: $IMAGE_NAME
+
+    # ── Reusable: Deploy to ECS ───────────────────────────────────────────
+    - step: &deploy-ecs
+        name: Deploy to ECS
+        script:
+          - pipe: atlassian/aws-ecs-deploy:1.9.0
+            variables:
+              AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+              AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+              AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+              CLUSTER_NAME: $ECS_CLUSTER
+              SERVICE_NAME: $ECS_SERVICE
+              FORCE_NEW_DEPLOYMENT: "true"
+
+pipelines:
+  branches:
+    # ─────────────────────────────────────────────────────────────────────
+    # feature/* and bugfix/*: Mandatory tests ONLY. No deployment.
+    # ─────────────────────────────────────────────────────────────────────
+    "feature/**":
+      - step: *run-tests
+
+    "bugfix/**":
+      - step: *run-tests
+
+    # ─────────────────────────────────────────────────────────────────────
+    # develop: Tests first (automatic), then MANUAL deploy to test env.
+    # ─────────────────────────────────────────────────────────────────────
+    develop:
+      - step: *run-tests
+
+      - step:
+          <<: *build-push-image
+          deployment: Test
+          trigger: manual        # ← HITL GATE: human must click "Run" in Bitbucket UI
+
+      - step:
+          <<: *deploy-ecs
+          name: Deploy to ECS (Test)
+          trigger: manual        # ← second gate after image push confirmed
+
+    # ─────────────────────────────────────────────────────────────────────
+    # master: Tests first (automatic), then MANUAL deploy to production.
+    # ─────────────────────────────────────────────────────────────────────
+    master:
+      - step: *run-tests
+
+      - step:
+          <<: *build-push-image
+          deployment: Production
+          trigger: manual        # ← HITL GATE: explicit human approval required
+
+      - step:
+          <<: *deploy-ecs
+          name: Deploy to ECS (Production)
+          trigger: manual        # ← second gate after image push confirmed
+
+  # Pull requests: run tests on every PR
+  pull-requests:
+    "**":
+      - step: *run-tests

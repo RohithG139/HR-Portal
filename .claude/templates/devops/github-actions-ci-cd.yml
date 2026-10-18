@@ -1,0 +1,168 @@
+# =============================================================================
+# GitHub Actions CI/CD Template
+# Adapt: registry URLs, cluster/service names, branch names, test commands.
+# Mandatory: configure Environments in GitHub Settings → Environments with
+#            reviewer protection rules before deploying.
+# =============================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "bugfix/**"
+      - develop
+  pull_request:
+    branches:
+      - develop
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: YOUR_ECR_REPO_NAME_HERE   # REQUIRED: replace before use
+  IMAGE_NAME: YOUR_IMAGE_NAME_HERE           # REQUIRED: replace before use
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1 — Automated Tests (MANDATORY — runs on every push/PR)
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: Automated Tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Java / Maven
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Lint & Static Analysis
+        run: ./mvnw checkstyle:check spotbugs:check -q
+
+      - name: Run Tests
+        run: ./mvnw verify -q
+
+      # Python alternative (comment out Java steps, uncomment below)
+      # - uses: actions/setup-python@v5
+      #   with: { python-version: "3.12" }
+      # - run: pip install poetry && poetry install
+      # - run: ruff check . && mypy .
+      # - run: pytest --tb=short
+
+      # Node/React alternative
+      # - uses: actions/setup-node@v4
+      #   with: { node-version: "22", cache: npm }
+      # - run: npm ci
+      # - run: npm run lint && npx tsc --noEmit
+      # - run: npx vitest run
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 2 — Deploy to Test  (HITL gate via GitHub Environment protection)
+# Runs only on 'develop' branch, after tests pass.
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-test:
+    name: Deploy → Test
+    needs: test
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    # Create this environment in GitHub Settings → Environments.
+    # Add required reviewers — deployment blocks until approved.
+    environment: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # AWS target
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:test-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:test-latest
+
+      - name: Deploy to ECS (Test)
+        env:
+          ECS_CLUSTER: YOUR_ECS_CLUSTER_TEST   # REQUIRED: replace before use
+          ECS_SERVICE: YOUR_ECS_SERVICE_TEST   # REQUIRED: replace before use
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment
+
+      # Azure alternative (comment out AWS steps above)
+      # - uses: azure/login@v2
+      #   with: { creds: '${{ secrets.AZURE_CREDENTIALS }}' }
+      # - run: az acr login --name myregistry
+      # - run: |
+      #     docker build -t myregistry.azurecr.io/$IMAGE_NAME:${{ github.sha }} .
+      #     docker push myregistry.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+      # - run: az containerapp update --name my-app-test --resource-group my-rg --image myregistry.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 3 — Deploy to Production  (HITL gate — mandatory reviewer approval)
+# Runs only on 'main' branch, after tests pass.
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy → Production
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # Create this environment in GitHub Settings → Environments.
+    # Add required reviewers AND a wait-timer for production safety.
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Deploy to ECS (Production)
+        env:
+          ECS_CLUSTER: YOUR_ECS_CLUSTER_PROD   # REQUIRED: replace before use
+          ECS_SERVICE: YOUR_ECS_SERVICE_PROD   # REQUIRED: replace before use
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment

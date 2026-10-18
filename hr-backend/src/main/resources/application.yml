@@ -1,0 +1,173 @@
+spring:
+  application:
+    name: hr-backend
+
+  task:
+    scheduling:
+      # Spring Boot's default @Scheduled executor is a SINGLE thread shared by every
+      # @Scheduled method in the app (EmailOutboxSenderJob, UndoWindowScheduler,
+      # OverdueReminderScheduler, ManagerTransferScheduler, EngineTaskWatcher — 5 independent
+      # jobs). This was always a latent bottleneck but harmless while EmailOutboxSenderJob was
+      # a zero-I/O stub; once it started doing real (even if fast-failing) SMTP calls, found
+      # live 2026-10-18, a backlog of outbox rows could occupy that single thread long enough
+      # to delay UndoWindowScheduler's own tick and fail its 15s test assertion window
+      # (F01OnboardingTests.completeOnboarding_afterUndoWindow_taskRemovedFromMyTasks). One
+      # thread per current job, cheap and avoids this class of cross-job contention entirely.
+      pool:
+        size: 5
+
+  datasource:
+    # PostgreSQL on the HR app's own compose project (docker-compose.yml at repo root, port 5433).
+    # Not the CaseFabric engine's Postgres instance (port 5431) — those two are never shared.
+    # Overridable via env vars; the literal defaults only match the dev docker-compose.yml
+    # (POSTGRES_USER/POSTGRES_PASSWORD=postgres there), which is fine for a local throwaway
+    # Postgres instance but must never be relied on outside dev.
+    url: jdbc:postgresql://localhost:5433/hr_app
+    username: ${HR_DB_USERNAME:postgres}
+    password: ${HR_DB_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      # 'validate' is intentional: Flyway owns the schema; Hibernate must not auto-alter it.
+      # If the schema does not match the entity mappings the app refuses to start — fail fast.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # All tables live in the 'hr' schema (R-DB-2). Hibernate prefixes every table reference
+        # with 'hr.' so that unqualified JPQL queries resolve correctly.
+        default_schema: hr
+    # SQL logging disabled by default; enable per-request with the Diagnostic Runbook in CLAUDE.md
+    show-sql: false
+
+  mail:
+    # SMTP relay for EmailOutboxSenderJob (R-ARC-6). Host-mode dev default: Mailcatcher
+    # (casefabric/getting-started/docker-compose.yml, SMTP port 1025 — CLAUDE.md §1.3,
+    # "all outgoing e-mail in dev"). The containerized hr-backend service overrides the host
+    # via SPRING_MAIL_HOST=host.docker.internal, same cross-compose-project pattern already
+    # used for CUBEWORKS_ENGINE_BASE_URL and Keycloak's own smtpServer config.
+    host: localhost
+    port: 1025
+    properties:
+      mail:
+        smtp:
+          # Mailcatcher accepts any mail unauthenticated, with no TLS — a real SMTP relay
+          # outside dev would need auth/starttls properties added alongside a real host/port.
+          auth: false
+          starttls:
+            enable: false
+          # Short, explicit timeouts (ms): without these, JavaMail's defaults are effectively
+          # unbounded on some platforms, so a down/unreachable relay (e.g. this port is simply
+          # not reachable — the exact situation during a Maven test run on the host, since
+          # Mailcatcher's SMTP port is only reachable from inside the Docker network, not from
+          # the host) hangs the scheduled job rather than failing fast into its existing
+          # retry/FAILED handling — found live, 2026-10-18 (a test run exceeded 10 minutes).
+          connectiontimeout: 3000
+          timeout: 3000
+          writetimeout: 3000
+    # Mailcatcher doesn't validate connections eagerly; keep startup fast rather than
+    # failing the whole app if the dev SMTP relay happens to be down (R-ARC-5's spirit:
+    # log and retry, don't crash the business flow over an e-mail side-effect).
+    test-connection: false
+
+  flyway:
+    # Flyway manages the 'hr' schema exclusively. It creates the schema on first run if absent.
+    schemas: hr
+    default-schema: hr
+    # Migrations live in src/main/resources/db/migration/ (V1__init.sql added in gate 1).
+    locations: classpath:db/migration
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Keycloak realm JWKS endpoint is discovered automatically from this issuer URI.
+          # Spring Security fetches /.well-known/openid-configuration at startup and caches the JWKS.
+          # Tests override this to blank and supply a stub JwtDecoder bean to avoid a live Keycloak.
+          issuer-uri: http://localhost:8180/realms/cubeworks-hr
+          # KNOWN GAP (gate 5 security review, 2026-10-15): only signature/issuer/expiry are
+          # validated — `aud`/`azp` are not. Any token the cubeworks-hr realm issues to ANY
+          # client (e.g. Keycloak's own account-console) is currently accepted here. The fix is
+          # `audiences: hr-backend` plus a matching audience-mapper on the hr-frontend client in
+          # infra/keycloak/cubeworks-hr-realm.json — NOT applied yet because the realm JSON has
+          # no such mapper today, and adding the Spring-side check alone (without the Keycloak
+          # side) would reject every real token and lock everyone out immediately. Both sides
+          # need to change together, with a realm re-import, which is riskier to do blind than
+          # to leave documented.
+
+# CaseFabric engine connection (2026-10-16, Wave 1 — RealCaseEngineClient).
+# Values here are host-mode dev defaults (./mvnw spring-boot:run on the host, reaching every
+# other service through its published localhost port, per CLAUDE.md §1.3). The containerized
+# hr-backend dev service (repo-root docker-compose.yml) overrides base-url and
+# keycloak-token-url via CUBEWORKS_ENGINE_BASE_URL / CUBEWORKS_ENGINE_KEYCLOAK_TOKEN_URL —
+# Spring Boot's relaxed env-var binding applies to these custom properties the same way it does
+# to its own (e.g. spring.datasource.url), no extra config needed for the override to work.
+cubeworks:
+  mail:
+    # From address stamped on every outgoing e-mail (EmailOutboxSenderJob). Mailcatcher
+    # accepts any From address in dev; a real deployment would override this to a real,
+    # deliverable sending domain.
+    from-address: noreply@cubeworks-hr.local
+  engine:
+    # CaseFabric engine REST API, via the nginx proxy (casefabric/getting-started, port 2027).
+    base-url: http://localhost:2027
+    # The deployed case definition file this app's one case model lives in.
+    definition: employeecase.xml
+    # Token endpoint for hr-backend's own Keycloak client-credentials grant (see
+    # infra/keycloak/cubeworks-hr-realm.json's "hr-backend" client). This MUST resolve to
+    # whatever address the engine's own OIDC config (casefabric/getting-started/src/conf/
+    # local.conf, second oidc entry) expects as the issuer string — see RealCaseEngineClient's
+    # class doc for why the host-mode and containerized values differ (localhost:8180 vs the
+    # Docker service name keycloak:8080) and why that's correct, not an inconsistency to "fix".
+    keycloak-token-url: http://localhost:8180/realms/cubeworks-hr/protocol/openid-connect/token
+    client-id: hr-backend
+    # Dev-only secret, matches infra/keycloak/cubeworks-hr-realm.json's "hr-backend" client.
+    # Override via CUBEWORKS_ENGINE_CLIENT_SECRET in any real deployment.
+    client-secret: hr-backend-dev-secret-change-for-prod
+    # The engine tenant user id hr-backend's client-credentials token resolves to (its "sub"
+    # claim), registered with HR/ITAdmin tenant roles in the engine's "world" tenant (originally
+    # seeded via casefabric/getting-started/src/bootstrap/world.tenant.conf — see that file's
+    # own comment for why a bootstrap-file edit alone does not update an already-running engine).
+    #
+    # NOT actually fixed per client (found live, 2026-10-18): Keycloak's dev-mode realm state is
+    # not volume-mounted (see docker-compose.yml's keycloak service comment), and a service
+    # account's user id is auto-generated fresh by Keycloak every time its owning client is
+    # recreated — which can happen on a `docker compose restart keycloak` that re-imports the
+    # realm. This value drifted from the one Wave 1 originally recorded here
+    # (fe292aca-e8e6-4e0b-9000-e422585baa39) to the one actually live today, confirmed via
+    # Keycloak's admin API (GET /admin/realms/cubeworks-hr/clients/{id}/service-account-user).
+    # Symptom when this drifts: POST /cases to the engine returns 200 but nothing is actually
+    # persisted (the case team references a tenant user the engine's tenant never re-synced to),
+    # so every case silently fails to exist — confirmed by checking the engine's own event store
+    # directly. If this ever drifts again, re-check the real id the same way and re-register it
+    # with the live engine (POST /tenant/world/users, as an existing tenant owner — self-
+    # registration is rejected) — editing this value and the bootstrap file is necessary but not
+    # sufficient on its own for an engine that has already bootstrapped its "world" tenant once.
+    service-account-user-id: b9d462ff-4185-44be-83fa-7beae8250602
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only the health endpoint is exposed without authentication (R-ARC, CLAUDE.md §2.4).
+        # /actuator/env and /actuator/beans are never exposed without auth.
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    com.cubeworks.hr: INFO
+
+springdoc:
+  # Swagger UI / OpenAPI docs are unauthenticated by design for local dev convenience
+  # (SecurityConfig permits /v3/api-docs/** and /swagger-ui/** without a token). This
+  # project has no production profile yet (gate 5 security review, 2026-10-15) — before
+  # ever deploying outside local dev, add one that sets both of these to false.
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
