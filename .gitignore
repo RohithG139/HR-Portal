@@ -13,11 +13,14 @@ token.txt
 *credentials*
 *secret*
 
-# --- CaseFabric engine (separate git repo, never nested into this one) -------
-# casefabric/getting-started is CaseFabric's own repo (its own remote, its own
-# history, CLAUDE.md §1.3). It is cloned locally at this path for dev, not
-# tracked inside the hr app's repo.
-/casefabric/
+# --- CaseFabric engine (casefabric/getting-started) ---------------------------
+# Vendored into this repo. Its own nested .git is removed on commit — tracked
+# here as regular files. Excludes mirror its own .gitignore: local runtime
+# state and build output, not source.
+casefabric/getting-started/run/
+casefabric/getting-started/documentation/UserContext.md
+# Original nested-repo metadata, kept locally as a backup, not tracked here.
+casefabric/.git-backup-disabled/
 
 # --- Java / Maven (hr-backend) -------------------------------------------------
 target/

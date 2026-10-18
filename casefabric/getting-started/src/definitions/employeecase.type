@@ -1,0 +1,22 @@
+<type xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne" id="employeecase.type" name="employeecase">
+    <schema>
+        <property id="sp_Employee" name="Employee" type="object" multiplicity="ExactlyOne">
+            <schema id="sc_Employee" name="Employee">
+                <property id="sp_Employee_employeeId" name="employeeId" type="string" multiplicity="ExactlyOne"/>
+                <property id="sp_Employee_contractType" name="contractType" type="string" multiplicity="ExactlyOne"/>
+                <property id="sp_Employee_startDate" name="startDate" type="string" multiplicity="ExactlyOne" format="date"/>
+                <property id="sp_Employee_isManager" name="isManager" type="boolean" multiplicity="ExactlyOne"/>
+            </schema>
+        </property>
+        <property id="sp_Onboarding" name="Onboarding" type="object" multiplicity="ExactlyOne">
+            <schema id="sc_Onboarding" name="Onboarding">
+                <property id="sp_Onboarding_itRequestSent" name="itRequestSent" type="boolean" multiplicity="ExactlyOne"/>
+                <property id="sp_Onboarding_mandatoryItemsDone" name="mandatoryItemsDone" type="boolean" multiplicity="ExactlyOne"/>
+                <property id="sp_Onboarding_overdueDate" name="overdueDate" type="string" multiplicity="ExactlyOne" format="date-time"/>
+                <property id="sp_Onboarding_overdueEnabled" name="overdueEnabled" type="boolean" multiplicity="ExactlyOne"/>
+                <property id="sp_Onboarding_completed" name="completed" type="boolean" multiplicity="ExactlyOne"/>
+                <property id="sp_Onboarding_itSetupComplete" name="itSetupComplete" type="boolean" multiplicity="ExactlyOne"/>
+            </schema>
+        </property>
+    </schema>
+</type>

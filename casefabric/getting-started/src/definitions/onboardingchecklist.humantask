@@ -1,0 +1,23 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="OnboardingChecklist" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[HR confirms all mandatory onboarding checklist items are done and completes onboarding (F01 ONB-05, spec section 8). Output is bound to Onboarding.completed, which raises the "Employee onboarded" milestone.]]></text>
+        </documentation>
+        <output id="completed__oc001" name="completed" typeRef="boolean"/>
+        <task-model>{
+  "schema": {
+    "title": "Onboarding checklist",
+    "type": "object",
+    "required": ["completed"],
+    "properties": {
+      "completed": {
+        "type": "boolean",
+        "title": "All mandatory checklist items are done",
+        "default": false
+      }
+    }
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

@@ -1,0 +1,23 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="EquipmentRequest" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[IT admin records issued equipment/accounts and marks the equipment request done (F01 ONB-06, spec section 8). Spring computes itSetupComplete from checklist_item (owner_role=IT_ADMIN) and sends it as this task's output.]]></text>
+        </documentation>
+        <output id="itSetupComplete__eq001" name="itSetupComplete" typeRef="boolean"/>
+        <task-model>{
+  "schema": {
+    "title": "Equipment request",
+    "type": "object",
+    "required": ["itSetupComplete"],
+    "properties": {
+      "itSetupComplete": {
+        "type": "boolean",
+        "title": "All IT setup items are done",
+        "default": false
+      }
+    }
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

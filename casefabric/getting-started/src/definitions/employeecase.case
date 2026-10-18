@@ -1,0 +1,91 @@
+<case xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne" id="employeecase.case" name="employeecase" expressionLanguage="spel" guid="_F01emp0">
+    <documentation textFormat="text/plain">
+        <text><![CDATA[Case of employee: one case per employee. F01 (Create employee -> Onboarding) scope only: the Onboarding checklist / Equipment request / Remaining setup flow and the "Employee onboarded" milestone, per docs/features/F01-onboarding/spec.md section 8. Later features add their own stages to this same casePlanModel in their own gate 3.]]></text>
+    </documentation>
+    <caseFileModel typeRef="employeecase.type"/>
+    <casePlanModel id="cm_employeecase.case_employeecase_0" name="Employee case" autoComplete="false">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[autoComplete is deliberately false: this case represents the employee's whole lifecycle (hire to exit, like the legacy emp.case), so it must stay open after F01's onboarding tasks finish rather than closing the moment the one required-by-nothing-else task completes. Verified live (2026-10-15): with autoComplete=true and no requiredRule on "Equipment request", the case plan auto-completed as soon as "Onboarding checklist" finished, permanently stranding "Equipment request"/"Remaining setup" in state Available even after Onboarding.itRequestSent later became true. With autoComplete=false the case plan stays Active indefinitely, which is correct until a later feature (F08 offboarding) adds the real exitCriterion that should end the case.]]></text>
+        </documentation>
+        <humanTask id="pi_onboarding_checklist" name="Onboarding checklist" isBlocking="true" performerRef="cr_employeecase_HR">
+            <documentation textFormat="text/plain">
+                <text><![CDATA[Owner: HR. Active from case start. Completed once all mandatory checklist items are done (ONB-05); output sets Onboarding.completed, which raises the "Employee onboarded" milestone.]]></text>
+            </documentation>
+            <outputs id="out_onboarding_checklist_completed" name="Onboarding.completed" bindingRef="Onboarding"/>
+            <extensionElements mustUnderstand="false">
+                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="onboardingchecklist.humantask">
+                    <parameterMapping id="pm_onboarding_checklist_out_completed" sourceRef="completed__oc001" targetRef="out_onboarding_checklist_completed">
+                        <transformation id="pm_onboarding_checklist_out_completed_t">
+                            <body><![CDATA[{'completed':completed}]]></body>
+                        </transformation>
+                    </parameterMapping>
+                    <duedate id="dd_onboarding_checklist">
+                        <condition id="dd_onboarding_checklist_cond">
+                            <body><![CDATA[Employee?.startDate]]></body>
+                        </condition>
+                    </duedate>
+                </cafienne:implementation>
+            </extensionElements>
+        </humanTask>
+        <milestone id="pi_employee_onboarded" name="Employee onboarded">
+            <entryCriterion id="ec_employee_onboarded">
+                <planItemOnPart id="op_employee_onboarded" sourceRef="pi_onboarding_checklist">
+                    <standardEvent>complete</standardEvent>
+                </planItemOnPart>
+            </entryCriterion>
+        </milestone>
+        <humanTask id="pi_equipment_request" name="Equipment request" isBlocking="true" performerRef="cr_employeecase_ITAdmin">
+            <documentation textFormat="text/plain">
+                <text><![CDATA[Owner: IT admin. Raised when HR sends the IT & equipment request (Onboarding.itRequestSent = true). Output sets Onboarding.itSetupComplete, computed by Spring from checklist_item.
+
+No entryCriterion here (removed 2026-10-16, Wave 1): a caseFileItemOnPart listening for an
+"update" transition on "Onboarding", gated by an ifPart on itRequestSent == true, looked right
+and was reported "verified live" on 2026-10-15, but that verification happened to be the FIRST
+update ever made to "Onboarding" in that test case. Confirmed live against the real engine
+(GET /cases/{id}/history/events, reproduced across a full engine process restart, not a
+transient hiccup): this onPart is evaluated only on the first-ever "Update" transition of a
+case-file item; every later update is logged by the engine as "Adding delayed event Update to
+myself" and never actually re-evaluated. In the real flow "Onboarding" is updated repeatedly
+before itRequestSent ever becomes true (checklist ticking updates mandatoryItemsDone first), so
+the onPart always exhausts itself on the wrong update and this task never activated. Plan-item
+onParts (e.g. "Remaining setup"'s, below) don't share this failure mode — a human task's own
+"complete" transition only happens once, same as "Employee onboarded"'s milestone sentry above,
+both of which fire reliably. OnboardingService.sendItRequest now drives this plan item directly
+via CaseEngineClient.startPlanItem (POST /cases/{id}/planitems/{id}/start) right after setting
+Onboarding.itRequestSent = true, instead of relying on a sentry confirmed broken for this shape
+of case-file item in this engine version (1.1.35).]]></text>
+            </documentation>
+            <outputs id="out_equipment_request_itSetupComplete" name="Onboarding.itSetupComplete" bindingRef="Onboarding"/>
+            <extensionElements mustUnderstand="false">
+                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="equipmentrequest.humantask">
+                    <parameterMapping id="pm_equipment_request_out_itSetupComplete" sourceRef="itSetupComplete__eq001" targetRef="out_equipment_request_itSetupComplete">
+                        <transformation id="pm_equipment_request_out_itSetupComplete_t">
+                            <body><![CDATA[{'itSetupComplete':itSetupComplete}]]></body>
+                        </transformation>
+                    </parameterMapping>
+                </cafienne:implementation>
+            </extensionElements>
+        </humanTask>
+        <humanTask id="pi_remaining_setup" name="Remaining setup" isBlocking="true" performerRef="cr_employeecase_ITAdmin">
+            <documentation textFormat="text/plain">
+                <text><![CDATA[Owner: IT admin. Raised only when "Equipment request" completes and IT work is still left (Onboarding.itSetupComplete != true), per F01 D-18. No case-file output.]]></text>
+            </documentation>
+            <entryCriterion id="ec_remaining_setup">
+                <ifPart contextRef="Onboarding">
+                    <condition>
+                        <body><![CDATA[Onboarding?.itSetupComplete != true]]></body>
+                    </condition>
+                </ifPart>
+                <planItemOnPart id="op_remaining_setup" sourceRef="pi_equipment_request">
+                    <standardEvent>complete</standardEvent>
+                </planItemOnPart>
+            </entryCriterion>
+            <extensionElements mustUnderstand="false">
+                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="remainingsetup.humantask"/>
+            </extensionElements>
+        </humanTask>
+    </casePlanModel>
+    <caseRoles caseTeamRef="employeecase.caseteam"/>
+    <input id="in_Employee" name="Employee" bindingRef="Employee"/>
+    <input id="in_Onboarding" name="Onboarding" bindingRef="Onboarding"/>
+</case>

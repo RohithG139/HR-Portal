@@ -1,0 +1,11 @@
+<caseteam xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne" id="employeecase.caseteam" name="employeecase">
+    <documentation textFormat="text/plain">
+        <text><![CDATA[Case team for the employee case. F01 (Create employee -> Onboarding) assigns Employee, Manager, HR and ITAdmin at case start via the StartCase REST call's caseTeam parameter. Peer and ProjectManager are declared here per 03-case-file.md section 3 but stay unassigned until later features (F03+) nominate members at runtime through the caseteam REST endpoints.]]></text>
+    </documentation>
+    <role id="cr_employeecase_Employee" name="Employee"/>
+    <role id="cr_employeecase_Manager" name="Manager"/>
+    <role id="cr_employeecase_HR" name="HR"/>
+    <role id="cr_employeecase_ITAdmin" name="ITAdmin"/>
+    <role id="cr_employeecase_Peer" name="Peer"/>
+    <role id="cr_employeecase_ProjectManager" name="ProjectManager"/>
+</caseteam>

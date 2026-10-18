@@ -1,0 +1,54 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="ProjectReview" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <input id="name__a7c82" name="name" typeRef="string"/>
+        <input id="projectName__3bfaf" name="projectName" typeRef="string"/>
+        <output id="reviewOutcome__0f9c2" name="reviewOutcome" typeRef="string"/>
+        <output id="skillGap__f06f8" name="skillGap" typeRef="boolean"/>
+        <task-model>{
+  "schema": {
+    "title": "Project / performance review",
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "title": "Full name",
+        "readOnly": true
+      },
+      "projectName": {
+        "type": "string",
+        "title": "Project name",
+        "readOnly": true
+      },
+      "reviewOutcome": {
+        "type": "string",
+        "title": "Review outcome",
+        "enum": [
+          "continue",
+          "nextProject",
+          "poorPerformance"
+        ]
+      },
+      "skillGap": {
+        "type": "boolean",
+        "title": "Skill gap identified",
+        "default": false
+      }
+    },
+    "required": [
+      "reviewOutcome"
+    ]
+  },
+  "uiSchema": {
+    "ui:order": [
+      "name",
+      "projectName",
+      "reviewOutcome",
+      "skillGap"
+    ],
+    "reviewOutcome": {
+      "ui:widget": "radio"
+    }
+  }
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

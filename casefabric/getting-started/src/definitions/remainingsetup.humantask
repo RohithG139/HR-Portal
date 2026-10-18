@@ -1,0 +1,15 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="RemainingSetup" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[IT admin finishes any IT setup items still open after "Equipment request" completed (F01 D-14, spec section 8). "Mark done" is blocked by Spring (409, "Tick all mandatory items first.") unless every mandatory IT item is ticked; this task itself writes no case-file output.]]></text>
+        </documentation>
+        <task-model>{
+  "schema": {
+    "title": "Remaining setup",
+    "type": "object",
+    "properties": {}
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>
