@@ -28,7 +28,7 @@ casefabric-new/
 ├── infra/keycloak/           Realm import (cubeworks-hr-realm.json) + login theme
 ├── hr-backend/               Spring Boot 3 / Java 21 backend (Maven)
 ├── hr-frontend/              React 19 / TypeScript / Vite frontend
-├── casefabric/getting-started/  CaseFabric engine — a SEPARATE git repo, cloned locally (see below), not part of this one
+├── casefabric/getting-started/  CaseFabric engine — vendored source (its own docker-compose.yml, never edited)
 └── .claude/                  Claude Code config, agents, specs and architecture docs for this project
 ```
 
@@ -44,20 +44,14 @@ casefabric-new/
 ## 1. Clone
 
 ```bash
-git clone <this-repo-url> casefabric-new
+git clone https://github.com/RohithG139/HR-Portal.git casefabric-new
 cd casefabric-new
 ```
 
-The CaseFabric engine lives in its own git repository and is **not** vendored inside this
-one (`casefabric/` is git-ignored here — see [CLAUDE.md §1.3](CLAUDE.md)). Clone it
-separately into `casefabric/`:
-
-```bash
-git clone <casefabric-engine-repo-url> casefabric
-```
-
-`casefabric/getting-started/` must end up containing the engine's own `docker-compose.yml`
-and `src/definitions/` — never edit that project's `docker-compose.yml` from here.
+The CaseFabric engine source (`casefabric/getting-started/`) is vendored directly in this
+repo, so no separate clone is needed. It still behaves as its own independent
+project in every other sense — its `docker-compose.yml` is never edited from here (see
+[CLAUDE.md §1.3](CLAUDE.md)) and it runs as a separate compose stack (step 2 below).
 
 ## 2. Start the CaseFabric engine stack
 
