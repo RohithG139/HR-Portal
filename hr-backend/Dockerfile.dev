@@ -42,9 +42,10 @@ WORKDIR /app
 COPY pom.xml mvnw ./
 COPY .mvn .mvn
 
-# Windows hosts often check out the Maven wrapper without the execute bit.
-# chmod ensures the script runs inside the Linux container regardless.
-RUN chmod +x mvnw
+# Windows hosts often check out the Maven wrapper with CRLF line endings and
+# without the execute bit. sed strips the CRs (a "#!/bin/sh\r" shebang makes
+# sh report "./mvnw: not found") and chmod makes the script executable.
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
 
 # Pre-download all declared dependencies into the Maven local repo (~/.m2).
 # When docker-compose mounts the 'hr-backend-m2' named volume at /root/.m2,
