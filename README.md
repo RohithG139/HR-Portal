@@ -95,7 +95,14 @@ with:
 docker compose logs -f hr-backend hr-frontend
 ```
 
-Once `hr-backend` reports healthy, open **http://localhost:5173** and log in with one of:
+Once `hr-backend` reports healthy, create the demo users' employee records (first run only —
+without this, login loops back to the login page):
+
+```bash
+docker exec -i hr-db-postgres psql -U postgres -d hr_app < infra/dev-seed/seed-demo-users.sql
+```
+
+Then open **http://localhost:5173** and log in with one of:
 
 | Username | Password | Role |
 |---|---|---|

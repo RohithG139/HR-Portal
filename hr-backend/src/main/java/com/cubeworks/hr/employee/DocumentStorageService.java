@@ -51,7 +51,9 @@ public class DocumentStorageService {
      * @throws IOException if writing to the filesystem fails
      */
     public String store(final MultipartFile file) throws IOException {
-        final Path dir = Paths.get(uploadDir);
+        // Absolute path is required: Tomcat's Part.write() resolves a relative File against its
+        // own multipart temp dir (/tmp/tomcat.../work/...), not the working directory.
+        final Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
         Files.createDirectories(dir);
         final String key = UUID.randomUUID().toString();
         final Path dest = dir.resolve(key);

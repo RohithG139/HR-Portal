@@ -266,7 +266,7 @@ networks:
       config:
         # Explicit /24 avoids Docker's automatic subnet-discovery scan, which can
         # hang on Windows when several bridge networks already occupy the 172.x range.
-        - subnet: 172.22.0.0/24
+        - subnet: 172.30.0.0/24
   # Reference to the CaseFabric engine stack's own network (casefabric/getting-started/
   # docker-compose.yml, compose project name "getting-started"). Declared `external` so
   # Docker Compose attaches to the network that project already created rather than trying

@@ -24,6 +24,8 @@ casefabric/.git-backup-disabled/
 
 # --- Java / Maven (hr-backend) -------------------------------------------------
 target/
+# DocumentStorageService's local file store (storage.dir, default ./uploads)
+hr-backend/uploads/
 *.class
 *.jar
 !.mvn/wrapper/maven-wrapper.jar
