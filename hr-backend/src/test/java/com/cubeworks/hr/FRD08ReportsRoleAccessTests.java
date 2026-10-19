@@ -72,6 +72,13 @@ class FRD08ReportsRoleAccessTests extends AbstractApiTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @DisplayName("AC-17: exportAll_asManager_returns403")
+    void exportAll_asManager_returns403() throws Exception {
+        perform(get("/api/reports/export").with(asManager()))
+                .andExpect(status().isForbidden());
+    }
+
     // ── C34 Bench ─────────────────────────────────────────────────────────────
 
     @Test

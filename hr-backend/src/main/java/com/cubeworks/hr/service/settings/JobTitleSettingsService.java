@@ -6,6 +6,8 @@ import com.cubeworks.hr.common.error.ErrorCodes;
 import com.cubeworks.hr.dto.settings.JobTitleDto;
 import com.cubeworks.hr.dto.settings.JobTitleRequest;
 import com.cubeworks.hr.employee.Employee;
+import com.cubeworks.hr.settings.Department;
+import com.cubeworks.hr.settings.DepartmentRepository;
 import com.cubeworks.hr.settings.JobTitle;
 import com.cubeworks.hr.settings.JobTitleRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -39,6 +41,7 @@ public class JobTitleSettingsService {
     private static final Logger log = LoggerFactory.getLogger(JobTitleSettingsService.class);
 
     private final JobTitleRepository jobTitleRepository;
+    private final DepartmentRepository departmentRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -52,10 +55,12 @@ public class JobTitleSettingsService {
      * @param clock              application-wide clock bean
      */
     public JobTitleSettingsService(final JobTitleRepository jobTitleRepository,
+                                   final DepartmentRepository departmentRepository,
                                    final AuditLogService auditLogService,
                                    final ObjectMapper objectMapper,
                                    final Clock clock) {
         this.jobTitleRepository = jobTitleRepository;
+        this.departmentRepository = departmentRepository;
         this.auditLogService = auditLogService;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -66,10 +71,11 @@ public class JobTitleSettingsService {
      *
      * @return all job titles
      */
+    @Transactional(readOnly = true)
     public List<JobTitleDto> listAll() {
         return jobTitleRepository.findAll().stream()
                 .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
-                .map(jt -> new JobTitleDto(jt.getId(), jt.getName()))
+                .map(JobTitleSettingsService::toDto)
                 .toList();
     }
 
@@ -91,8 +97,11 @@ public class JobTitleSettingsService {
                     "This name already exists.");
         }
 
+        final Department department = departmentRepository.findById(request.departmentId())
+                .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
+                        "Department not found: " + request.departmentId()));
         final OffsetDateTime now = OffsetDateTime.now(clock);
-        final JobTitle jt = new JobTitle(request.name());
+        final JobTitle jt = new JobTitle(request.name(), request.grade(), department);
         jt.setCreatedAt(now);
         jt.setCreatedBy(actor.getId());
         jt.setUpdatedAt(now);
@@ -105,7 +114,7 @@ public class JobTitleSettingsService {
         // Name is user-entered free text and is not logged raw (log-injection risk via
         // embedded CR/LF); the audit_log row above already captures it faithfully.
         log.info("JobTitle created: id={} by employee={}", jt.getId(), actor.getId());
-        return new JobTitleDto(jt.getId(), jt.getName());
+        return toDto(jt);
     }
 
     /**
@@ -146,11 +155,22 @@ public class JobTitleSettingsService {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    private static JobTitleDto toDto(final JobTitle jt) {
+        final Department d = jt.getDepartment();
+        return new JobTitleDto(jt.getId(), jt.getName(),
+                jt.getGrade() != null ? jt.getGrade().name() : null,
+                d != null ? d.getId() : null,
+                d != null ? d.getName() : null);
+    }
+
     private String snapshot(final JobTitle jt) {
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                    "id", jt.getId() != null ? jt.getId() : 0L,
-                    "name", jt.getName()));
+            final Map<String, Object> snap = new java.util.LinkedHashMap<>();
+            snap.put("id", jt.getId() != null ? jt.getId() : 0L);
+            snap.put("name", jt.getName());
+            snap.put("grade", jt.getGrade() != null ? jt.getGrade().name() : null);
+            snap.put("departmentId", jt.getDepartment() != null ? jt.getDepartment().getId() : null);
+            return objectMapper.writeValueAsString(snap);
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialise job title snapshot", e);
             return "{}";

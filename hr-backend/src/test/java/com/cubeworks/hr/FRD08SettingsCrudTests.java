@@ -53,12 +53,18 @@ class FRD08SettingsCrudTests extends AbstractApiTest {
         final long suffix = nextId();
         final String name = "Account Manager " + suffix;
 
+        final long departmentId = jdbc.queryForObject(
+                "SELECT id FROM hr.department WHERE name = 'Development'", Long.class);
+
         // Create
         perform(withJson(post("/api/settings/job-titles"), """
-                {"name":"%s"}
-                """.formatted(name)).with(asHR()))
+                {"name":"%s","grade":"SENIOR_II","departmentId":%d}
+                """.formatted(name, departmentId)).with(asHR()))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value(name));
+                .andExpect(jsonPath("$.name").value(name))
+                .andExpect(jsonPath("$.grade").value("SENIOR_II"))
+                .andExpect(jsonPath("$.departmentId").value(departmentId))
+                .andExpect(jsonPath("$.departmentName").value("Development"));
 
         // Verify it appears in the list
         perform(get("/api/settings/job-titles").with(asHR()))
@@ -457,7 +463,7 @@ class FRD08SettingsCrudTests extends AbstractApiTest {
     void createJobTitle_givenDuplicateName_returns409DuplicateName() throws Exception {
         perform(withJson(post("/api/settings/job-titles"),
                 """
-                {"name":"Developer"}
+                {"name":"Developer","grade":"MEDIOR","departmentId":1}
                 """).with(asHR()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DUPLICATE_NAME"))

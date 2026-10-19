@@ -29,7 +29,12 @@ vi.mock('../../api/reports', () => ({
     benchCount: 4,
     appraisalCompletionRate: 62,
     unreturnedAssetCount: 2,
+    headcountChangeVsLastMonth: 2,
+    billableStaffCount: 50,
+    appraisalRoundYear: 2026,
+    unreturnedAssetExEmployeeCount: 1,
   }),
+  exportAllReports: vi.fn().mockResolvedValue(undefined),
   getHeadcount: vi.fn().mockResolvedValue([
     {
       departmentId: 1,
@@ -124,6 +129,7 @@ import * as reportsApi from '../../api/reports'
 import { BenchReportPage } from './BenchReportPage'
 import { HeadcountReportPage } from './HeadcountReportPage'
 import { UnreturnedAssetsReportPage } from './UnreturnedAssetsReportPage'
+import { ReportsOverviewPage, kpiMeta } from './ReportsOverviewPage'
 
 // ---------------------------------------------------------------------------
 // Test wrapper
@@ -307,5 +313,46 @@ describe('UnreturnedAssetsReportPage', () => {
         status: 'NOT_RETURNED',
       })
     })
+  })
+})
+
+describe('ReportsOverviewPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('renders the wireframe KPI captions from the summary', async () => {
+    render(<ReportsOverviewPage />, { wrapper: Wrapper })
+    await waitFor(() => {
+      expect(screen.getByText('+2 vs last month')).toBeTruthy()
+    })
+    expect(screen.getByText('8% of billable staff')).toBeTruthy()
+    expect(screen.getByText('Round 2026')).toBeTruthy()
+    expect(screen.getByText('1 ex-employee')).toBeTruthy()
+  })
+
+  it('export all button calls exportAllReports', async () => {
+    render(<ReportsOverviewPage />, { wrapper: Wrapper })
+    fireEvent.click(screen.getByRole('button', { name: /export all to excel/i }))
+    await waitFor(() => {
+      expect(vi.mocked(reportsApi.exportAllReports)).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('kpiMeta handles negative change, no open round and plural ex-employees', () => {
+    const m = kpiMeta({
+      totalHeadcount: 40,
+      benchCount: 0,
+      appraisalCompletionRate: 0,
+      unreturnedAssetCount: 3,
+      headcountChangeVsLastMonth: -1,
+      billableStaffCount: 0,
+      appraisalRoundYear: null,
+      unreturnedAssetExEmployeeCount: 2,
+    })
+    expect(m.headcount).toBe('-1 vs last month')
+    expect(m.bench).toBe('0% of billable staff')
+    expect(m.appraisal).toBeUndefined()
+    expect(m.assets).toBe('2 ex-employees')
   })
 })

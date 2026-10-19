@@ -14,6 +14,7 @@ The case file and the case roles are in `03-case-file.md`. How the parts talk to
 |---|---|
 | 2026-10-15 | Baseline v2: 39 tables, consolidated from v1 (66) |
 | 2026-10-15 | F01 decisions applied: **+`onboarding_draft`** (Q13, now 40 tables); `document.employee_id` nullable + doc_type `POLICY`; `checklist_template_item.policy_document_id` (Q7); `employee.stage` no longer has `DRAFT` and the draft/case_id CHECK is removed |
+| 2026-10-19 | **`job_title.grade` + `job_title.department_id` added** (`V15__job_title_grade_department.sql`, FRD-08 S1, user decision 2026-10-19 reversing FRD-08 spec §12 D-01). Adopts FRD-08 v1.2 Appendix A #8's own suggested fix so the Job titles table and the "Add job title" pop-up match the wireframe (Grade, Department). Both nullable for pre-existing rows; the API requires both on create. `grade` reuses `employee.grade`'s CHECK list; `department_id` is `ON DELETE RESTRICT`, so a department used by a job title cannot be removed (ADM-03). These are attributes of the job title itself; they do not replace or derive `employee.department_id`/`employee.grade`, so 3NF holds. |
 | 2026-10-17 | **Applied early, out of feature order (user-approved):** `appraisal_form`/`form_section`/`form_question` (F09/FRD-08 Gate 1, `V11__create_appraisal_form_tables.sql`) and `client`/`project`/`project_assignment`/`client_feedback`/`employee_exit`/`development_plan`/`appraisal_round`/`appraisal`/`pip`/`review`/`checkin` + their 6 report views (F09/FRD-08 Gate 2 reports, `V13__create_report_tables_and_views.sql`) were already fully designed here but had never actually been created by `V1__init.sql` — a design/applied-schema gap, not new design. They were applied now, ahead of F04 (Projects)/F06 (Appraisal)/F07 (PIP)/F08 (Offboarding) having their own specs or gates, purely so FRD-08's 8 reports could read real data instead of placeholders. The DDL is unchanged from what was already documented below — nothing here was designed or altered for this purpose. When F04/F06/F07/F08 are later spec'd and reach their own Gate 1, these tables already exist; that gate adds whatever (if anything) those specs still need on top, rather than creating them from scratch. `goal`, `development_activity`, `checkin_goal` and `review_answer` remain undocumented-as-applied (not needed by any of the 6 report views) — still future work for their owning features. |
 | 2026-10-17 | **Same gap, found again:** `manager_change` (§2, line ~356) was documented here and in FRD-01 v1.2 §5, both of which assumed it was "already in the baseline, migrated by F01's gate 1" — it was not; `V1__init.sql` never created it. Applied by `V14__create_manager_change_tables.sql` (F03/FRD-01 Wave 3, Gate 1), DDL unchanged from what was already documented below (+ standard audit columns, R-DB-2). **+1 table, user-approved 2026-10-17 (FRD-01 spec §12 D-W3):** `manager_change_task(change_id, engine_task_id)` — composite PK, no surrogate id — closes the gap both this doc (§6 item 14) and FRD-01 v1.2's own cross-check independently flagged: a single boolean can't represent "HR ticks individual tasks to move." Baseline is now 42 tables (40 + `appraisal_form`/`form_section`/`form_question` already counted in the 2026-10-17 entry above... — see §2's own table count note if one exists; this changelog does not re-total eagerly, line counts in §2 are the source of truth). |
 
@@ -40,9 +41,11 @@ create table department (
   name varchar(100) not null unique
 );
 
-create table job_title (                                   -- independent of department (keeps employee.department_id 3NF)
+create table job_title (                                   -- grade/department = the job title's own defaults; employee keeps its own department_id/grade
   id bigint generated always as identity primary key,
-  name varchar(100) not null unique
+  name varchar(100) not null unique,
+  grade varchar(10) check (grade in ('JUNIOR','MEDIOR','SENIOR','SENIOR_I','SENIOR_II')),  -- V15; NULL only on pre-V15 rows
+  department_id bigint references department                -- V15; NULL only on pre-V15 rows
 );
 
 create table employee (

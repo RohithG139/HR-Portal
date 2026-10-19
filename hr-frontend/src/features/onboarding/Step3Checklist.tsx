@@ -75,6 +75,10 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
     onSuccess: (result) => {
       showToast(`Onboarding completing… undo available until ${result.undoUntil}.`)
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      // Refresh the checklist so canComplete reflects the now-pending task; combined with
+      // completeMutation.isSuccess on the button below this stops a second click from firing
+      // against the already-completing task and showing a false "Failed to complete" toast.
+      void queryClient.invalidateQueries({ queryKey: ['checklist', employeeId] })
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'MANDATORY_ITEMS_OPEN') {
@@ -131,12 +135,12 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
           <button
             type="button"
             onClick={() => completeMutation.mutate()}
-            disabled={!canComplete || completeMutation.isPending}
+            disabled={!canComplete || completeMutation.isPending || completeMutation.isSuccess}
             aria-disabled={!canComplete}
             title={!canComplete ? 'Complete all mandatory items first' : undefined}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {completeMutation.isPending ? 'Completing…' : 'Complete onboarding'}
+            {completeMutation.isPending || completeMutation.isSuccess ? 'Completing…' : 'Complete onboarding'}
           </button>
         </div>
       </div>

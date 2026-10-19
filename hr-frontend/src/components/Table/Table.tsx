@@ -158,9 +158,9 @@ export function Table<T>({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-sm text-left text-gray-700">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+      <div className="wf-table-wrap">
+        <table className="wf-table">
+          <thead>
             <tr>
               {columns.map((col) => (
                 <th
@@ -172,7 +172,7 @@ export function Table<T>({
                     <button
                       type="button"
                       onClick={() => handleSort(col.key)}
-                      className="flex items-center gap-1 font-semibold hover:text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                      className="flex items-center gap-1.5 uppercase font-semibold focus-visible:ring-2 focus-visible:ring-white rounded"
                       aria-sort={
                         sortKey === col.key
                           ? sortDir === 'asc' ? 'ascending' : 'descending'
@@ -180,9 +180,10 @@ export function Table<T>({
                       }
                     >
                       {col.header}
-                      {sortKey === col.key && (
-                        <span aria-hidden="true">{sortDir === 'asc' ? '↑' : '↓'}</span>
-                      )}
+                      {/* Wireframe th.sortable indicator: ⇅ idle, ↑/↓ active */}
+                      <span aria-hidden="true" className={sortKey === col.key ? '' : 'opacity-55 text-[11px]'}>
+                        {sortKey === col.key ? (sortDir === 'asc' ? '↑' : '↓') : '⇅'}
+                      </span>
                     </button>
                   ) : (
                     col.header
@@ -191,7 +192,7 @@ export function Table<T>({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody>
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">

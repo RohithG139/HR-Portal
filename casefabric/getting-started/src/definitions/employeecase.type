@@ -16,6 +16,7 @@
                 <property id="sp_Onboarding_overdueEnabled" name="overdueEnabled" type="boolean" multiplicity="ExactlyOne"/>
                 <property id="sp_Onboarding_completed" name="completed" type="boolean" multiplicity="ExactlyOne"/>
                 <property id="sp_Onboarding_itSetupComplete" name="itSetupComplete" type="boolean" multiplicity="ExactlyOne"/>
+                <property id="sp_Onboarding_itReadyBy" name="itReadyBy" type="string" multiplicity="ZeroOrOne" format="date"/>
             </schema>
         </property>
     </schema>

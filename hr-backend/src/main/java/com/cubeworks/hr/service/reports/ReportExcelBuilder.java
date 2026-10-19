@@ -47,6 +47,10 @@ public final class ReportExcelBuilder {
     }
 
     public static byte[] buildHeadcount(final List<HeadcountReportRow> rows) {
+        return writeWorkbook(List.of(headcountSheet(rows)));
+    }
+
+    private static ReportSheet headcountSheet(final List<HeadcountReportRow> rows) {
         final String[] headers = {
                 "Department", "Employee Count", "Joiners This Year",
                 "Leavers This Year", "Permanent", "Fixed Term"
@@ -59,10 +63,14 @@ public final class ReportExcelBuilder {
                 String.valueOf(r.permanentCount()),
                 String.valueOf(r.fixedTermCount())
         }).toList();
-        return buildWorkbook("Headcount", headers, data);
+        return new ReportSheet("Headcount", headers, data);
     }
 
     public static byte[] buildBench(final List<BenchReportRow> rows) {
+        return writeWorkbook(List.of(benchSheet(rows)));
+    }
+
+    private static ReportSheet benchSheet(final List<BenchReportRow> rows) {
         final String[] headers = {
                 "Employee", "Job Title", "Manager", "Bench Since", "Days On Bench", "Last Project"
         };
@@ -74,10 +82,14 @@ public final class ReportExcelBuilder {
                 r.daysOnBench() != null ? String.valueOf(r.daysOnBench()) : "",
                 r.lastProjectName() != null ? r.lastProjectName() : ""
         }).toList();
-        return buildWorkbook("Bench", headers, data);
+        return new ReportSheet("Bench", headers, data);
     }
 
     public static byte[] buildAllocation(final List<AllocationReportRow> rows) {
+        return writeWorkbook(List.of(allocationSheet(rows)));
+    }
+
+    private static ReportSheet allocationSheet(final List<AllocationReportRow> rows) {
         final String[] headers = {
                 "Employee", "Job Title", "Total Allocation %", "Status", "Projects"
         };
@@ -88,10 +100,14 @@ public final class ReportExcelBuilder {
                 r.allocationStatus(),
                 r.projects() != null ? r.projects() : ""
         }).toList();
-        return buildWorkbook("Allocation", headers, data);
+        return new ReportSheet("Allocation", headers, data);
     }
 
     public static byte[] buildAppraisalStatus(final List<AppraisalStatusReportRow> rows) {
+        return writeWorkbook(List.of(appraisalStatusSheet(rows)));
+    }
+
+    private static ReportSheet appraisalStatusSheet(final List<AppraisalStatusReportRow> rows) {
         final String[] headers = {
                 "Employee", "Manager", "Self Status", "Peers Submitted",
                 "Peers Total", "Manager Review Status", "Manager Review Outcome",
@@ -110,10 +126,14 @@ public final class ReportExcelBuilder {
                 r.result() != null ? r.result() : "",
                 r.appraisalStatus() != null ? r.appraisalStatus() : ""
         }).toList();
-        return buildWorkbook("Appraisal Status", headers, data);
+        return new ReportSheet("Appraisal Status", headers, data);
     }
 
     public static byte[] buildPips(final List<PipReportRow> rows) {
+        return writeWorkbook(List.of(pipsSheet(rows)));
+    }
+
+    private static ReportSheet pipsSheet(final List<PipReportRow> rows) {
         final String[] headers = {
                 "Employee", "Manager", "Status",
                 "Start Date", "Final Review Date", "Days Left", "Extensions"
@@ -127,10 +147,14 @@ public final class ReportExcelBuilder {
                 r.daysLeft() != null ? String.valueOf(r.daysLeft()) : "",
                 String.valueOf(r.extensionCount())
         }).toList();
-        return buildWorkbook("PIPs", headers, data);
+        return new ReportSheet("PIPs", headers, data);
     }
 
     public static byte[] buildOnboarding(final List<OnboardingReportRow> rows) {
+        return writeWorkbook(List.of(onboardingSheet(rows)));
+    }
+
+    private static ReportSheet onboardingSheet(final List<OnboardingReportRow> rows) {
         final String[] headers = {
                 "Employee", "Start Date", "Template",
                 "Checklist %", "IT Status", "Open Items"
@@ -143,10 +167,14 @@ public final class ReportExcelBuilder {
                 r.itStatus() != null ? r.itStatus() : "",
                 String.valueOf(r.openItems())
         }).toList();
-        return buildWorkbook("Onboarding", headers, data);
+        return new ReportSheet("Onboarding", headers, data);
     }
 
     public static byte[] buildContractsProbation(final List<ContractsProbationReportRow> rows) {
+        return writeWorkbook(List.of(contractsProbationSheet(rows)));
+    }
+
+    private static ReportSheet contractsProbationSheet(final List<ContractsProbationReportRow> rows) {
         final String[] headers = {
                 "Employee", "Event Type", "Event Date", "Days Until", "Owner Role", "Status"
         };
@@ -158,7 +186,7 @@ public final class ReportExcelBuilder {
                 r.ownerRole() != null ? r.ownerRole() : "",
                 r.eventStatus() != null ? r.eventStatus() : ""
         }).toList();
-        return buildWorkbook("Contracts & Probation", headers, data);
+        return new ReportSheet("Contracts & Probation", headers, data);
     }
 
     /**
@@ -172,6 +200,10 @@ public final class ReportExcelBuilder {
      * @return the workbook bytes as {@code application/vnd.openxmlformats-officedocument.spreadsheetml.sheet}
      */
     public static byte[] buildTeam(final List<TeamMemberDto> rows) {
+        return writeWorkbook(List.of(teamSheet(rows)));
+    }
+
+    private static ReportSheet teamSheet(final List<TeamMemberDto> rows) {
         final String[] headers = {
                 "Employee Code", "First Name", "Last Name", "Job Title", "Stage"
         };
@@ -182,10 +214,14 @@ public final class ReportExcelBuilder {
                 r.jobTitle() != null ? r.jobTitle() : "",
                 r.stage() != null ? r.stage() : ""
         }).toList();
-        return buildWorkbook("My Team", headers, data);
+        return new ReportSheet("My Team", headers, data);
     }
 
     public static byte[] buildUnreturnedAssets(final List<UnreturnedAssetsReportRow> rows) {
+        return writeWorkbook(List.of(unreturnedAssetsSheet(rows)));
+    }
+
+    private static ReportSheet unreturnedAssetsSheet(final List<UnreturnedAssetsReportRow> rows) {
         final String[] headers = {
                 "Asset Number", "Description", "Employee", "Last Working Day", "Status"
         };
@@ -196,7 +232,7 @@ public final class ReportExcelBuilder {
                 r.lastWorkingDay() != null ? r.lastWorkingDay().toString() : "",
                 r.assetStatus() != null ? r.assetStatus() : ""
         }).toList();
-        return buildWorkbook("Unreturned Assets", headers, data);
+        return new ReportSheet("Unreturned Assets", headers, data);
     }
 
     /**
@@ -215,52 +251,79 @@ public final class ReportExcelBuilder {
     }
 
     /**
-     * Generic Excel builder shared by every {@code buildXxx} method above.
+     * "Export all to Excel" (C48, S7): one workbook with one sheet per report, in the same order
+     * as the overview's report cards. Each list comes from the same {@code ReportService} method
+     * as that report's own JSON endpoint, unfiltered (spec §7 single source of data).
+     */
+    public static byte[] buildAll(final List<HeadcountReportRow> headcount,
+                                  final List<BenchReportRow> bench,
+                                  final List<AllocationReportRow> allocation,
+                                  final List<AppraisalStatusReportRow> appraisalStatus,
+                                  final List<PipReportRow> pips,
+                                  final List<OnboardingReportRow> onboarding,
+                                  final List<ContractsProbationReportRow> contractsProbation,
+                                  final List<UnreturnedAssetsReportRow> unreturnedAssets) {
+        return writeWorkbook(List.of(
+                headcountSheet(headcount),
+                benchSheet(bench),
+                allocationSheet(allocation),
+                appraisalStatusSheet(appraisalStatus),
+                pipsSheet(pips),
+                onboardingSheet(onboarding),
+                contractsProbationSheet(contractsProbation),
+                unreturnedAssetsSheet(unreturnedAssets)));
+    }
+
+    /** One sheet's tab name, header row and data rows. */
+    private record ReportSheet(String name, String[] headers, List<String[]> rows) {
+    }
+
+    /**
+     * Generic Excel writer shared by every {@code buildXxx} method above.
      *
-     * <p>Creates a single sheet with a header row, one data row per {@code rows} entry, and
-     * auto-sizes every column. This is the single place that owns POI boilerplate, so a style
-     * change (e.g. header font, freeze pane) is made once here and inherited by all 8 exports.</p>
+     * <p>Creates one sheet per {@link ReportSheet}, each with a header row, one data row per
+     * entry, and auto-sized columns. This is the single place that owns POI boilerplate, so a
+     * style change (e.g. header font, freeze pane) is made once here and inherited by all exports.</p>
      *
-     * @param sheetName the Excel sheet tab name
-     * @param headers   column header strings for row 0
-     * @param rows      data rows; each inner array must have the same length as {@code headers}
+     * @param sheets the sheets to write, in tab order; each row array must have the same length
+     *               as its sheet's {@code headers}
      * @return the workbook, serialised to bytes
      * @throws UncheckedIOException if POI fails to serialise the workbook — a write to an
      *         in-memory {@link ByteArrayOutputStream} failing is not an expected runtime
      *         condition, so callers (thin controller methods) are not forced to declare
      *         {@code throws IOException} for something that in practice never happens
      */
-    private static byte[] buildWorkbook(final String sheetName,
-                                         final String[] headers,
-                                         final List<String[]> rows) {
+    private static byte[] writeWorkbook(final List<ReportSheet> sheets) {
         try (final Workbook wb = new XSSFWorkbook();
              final ByteArrayOutputStream out = new ByteArrayOutputStream()) {
 
-            final Sheet sheet = wb.createSheet(sheetName);
+            for (final ReportSheet rs : sheets) {
+                final Sheet sheet = wb.createSheet(rs.name());
 
-            final Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) {
-                headerRow.createCell(i).setCellValue(headers[i]);
-            }
-
-            int rowIdx = 1;
-            for (final String[] row : rows) {
-                final Row xlRow = sheet.createRow(rowIdx++);
-                for (int i = 0; i < row.length; i++) {
-                    xlRow.createCell(i).setCellValue(row[i] != null ? row[i] : "");
+                final Row headerRow = sheet.createRow(0);
+                for (int i = 0; i < rs.headers().length; i++) {
+                    headerRow.createCell(i).setCellValue(rs.headers()[i]);
                 }
-            }
 
-            // Auto-size all columns for readability (R-UI-2 export)
-            for (int i = 0; i < headers.length; i++) {
-                sheet.autoSizeColumn(i);
+                int rowIdx = 1;
+                for (final String[] row : rs.rows()) {
+                    final Row xlRow = sheet.createRow(rowIdx++);
+                    for (int i = 0; i < row.length; i++) {
+                        xlRow.createCell(i).setCellValue(row[i] != null ? row[i] : "");
+                    }
+                }
+
+                // Auto-size all columns for readability (R-UI-2 export)
+                for (int i = 0; i < rs.headers().length; i++) {
+                    sheet.autoSizeColumn(i);
+                }
+                log.debug("Built Excel sheet '{}' with {} data rows", rs.name(), rs.rows().size());
             }
 
             wb.write(out);
-            log.debug("Built Excel '{}' with {} data rows", sheetName, rows.size());
             return out.toByteArray();
         } catch (final IOException e) {
-            throw new UncheckedIOException("Failed to build Excel workbook: " + sheetName, e);
+            throw new UncheckedIOException("Failed to build Excel workbook", e);
         }
     }
 }

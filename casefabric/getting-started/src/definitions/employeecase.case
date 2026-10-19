@@ -19,9 +19,9 @@
                             <body><![CDATA[{'completed':completed}]]></body>
                         </transformation>
                     </parameterMapping>
-                    <duedate id="dd_onboarding_checklist">
+                    <duedate id="dd_onboarding_checklist" contextRef="Employee">
                         <condition id="dd_onboarding_checklist_cond">
-                            <body><![CDATA[Employee?.startDate]]></body>
+                            <body><![CDATA[Employee.startDate == null ? null : (T(java.time.LocalDate).parse(Employee.startDate).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
                         </condition>
                     </duedate>
                 </cafienne:implementation>
@@ -53,8 +53,23 @@ onParts (e.g. "Remaining setup"'s, below) don't share this failure mode — a hu
 both of which fire reliably. OnboardingService.sendItRequest now drives this plan item directly
 via CaseEngineClient.startPlanItem (POST /cases/{id}/planitems/{id}/start) right after setting
 Onboarding.itRequestSent = true, instead of relying on a sentry confirmed broken for this shape
-of case-file item in this engine version (1.1.35).]]></text>
+of case-file item in this engine version (1.1.35).
+
+manualActivationRule = true (added 2026-10-19): with no entryCriterion and no manual activation,
+CMMN activates this task the moment the case plan starts, so IT would see it before HR ever sent
+the request and Spring's later "start" call would hit an already-Active item. With the rule it
+waits in Enabled until OnboardingService.sendItRequest starts it.
+
+Due date: Onboarding.itReadyBy, the HR-entered "ready by" date (F01 spec section 8), written into
+the case file by sendItRequest in the same update that sets itRequestSent.]]></text>
             </documentation>
+            <itemControl id="ic_equipment_request">
+                <manualActivationRule id="mar_equipment_request">
+                    <condition id="mar_equipment_request_cond">
+                        <body><![CDATA[true]]></body>
+                    </condition>
+                </manualActivationRule>
+            </itemControl>
             <outputs id="out_equipment_request_itSetupComplete" name="Onboarding.itSetupComplete" bindingRef="Onboarding"/>
             <extensionElements mustUnderstand="false">
                 <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="equipmentrequest.humantask">
@@ -63,6 +78,11 @@ of case-file item in this engine version (1.1.35).]]></text>
                             <body><![CDATA[{'itSetupComplete':itSetupComplete}]]></body>
                         </transformation>
                     </parameterMapping>
+                    <duedate id="dd_equipment_request" contextRef="Onboarding">
+                        <condition id="dd_equipment_request_cond">
+                            <body><![CDATA[Onboarding.itReadyBy == null ? null : (T(java.time.LocalDate).parse(Onboarding.itReadyBy).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
+                        </condition>
+                    </duedate>
                 </cafienne:implementation>
             </extensionElements>
         </humanTask>
@@ -81,7 +101,13 @@ of case-file item in this engine version (1.1.35).]]></text>
                 </planItemOnPart>
             </entryCriterion>
             <extensionElements mustUnderstand="false">
-                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="remainingsetup.humantask"/>
+                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="remainingsetup.humantask">
+                    <duedate id="dd_remaining_setup" contextRef="Onboarding">
+                        <condition id="dd_remaining_setup_cond">
+                            <body><![CDATA[Onboarding.itReadyBy == null ? null : (T(java.time.LocalDate).parse(Onboarding.itReadyBy).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
+                        </condition>
+                    </duedate>
+                </cafienne:implementation>
             </extensionElements>
         </humanTask>
     </casePlanModel>

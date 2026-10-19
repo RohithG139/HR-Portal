@@ -15,7 +15,7 @@
   "passwordPolicy": "regexPattern(^(?=.*[A-Za-z])(?=.*[0-9]).{12,}$) and notEmail",
 
   "smtpServer": {
-    "host": "host.docker.internal",
+    "host": "mailcatcher",
     "port": "1025",
     "from": "noreply@cubeworks.internal",
     "fromDisplayName": "CubeWorks HR",
@@ -105,6 +105,15 @@
         { "type": "password", "value": "Password1234", "temporary": false }
       ],
       "realmRoles": ["IT_ADMIN"]
+    },
+    {
+      "id": "b9d462ff-4185-44be-83fa-7beae8250602",
+      "username": "service-account-hr-backend",
+      "enabled": true,
+      "serviceAccountClientId": "hr-backend",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users", "view-realm"]
+      }
     }
   ],
 

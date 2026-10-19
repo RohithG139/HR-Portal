@@ -1,20 +1,27 @@
 /**
  * @component TopBar
  * @description Application-wide top navigation bar (R-UI-3).
- * Displays: current user role, notification bell with unread count,
- * user initials with dropdown (My profile / Log out).
+ * Displays: current user role, notification bell with unread count and
+ * notifications dropdown (wireframe #notif), user initials with dropdown (My profile / Log out).
  * All items are keyboard-navigable with focus-visible ring.
  * @props (none — reads from AuthContext and notification API)
  * @example
  * <TopBar />
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
-import { getNotificationCount } from '../../api/notifications'
+import {
+  getNotificationCount,
+  getNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from '../../api/notifications'
+import type { NotificationDto } from '../../api/notifications'
+import { formatDate } from '../../lib/date'
 
 /**
  * BellIcon — decorative SVG notification bell.
@@ -49,8 +56,11 @@ function BellIcon(): ReactElement {
  */
 export function TopBar(): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef<HTMLDivElement>(null)
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const initials = user?.initials ?? '--'
   const roleLabel = user?.appRole ?? 'Not signed in'
@@ -65,6 +75,54 @@ export function TopBar(): ReactElement {
   })
 
   const unreadCount = countData?.count ?? 0
+
+  // A38 list — fetched only while the bell dropdown is open
+  const { data: notifData } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => getNotifications(),
+    enabled: user !== null && notifOpen,
+  })
+
+  const invalidateNotifications = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    void queryClient.invalidateQueries({ queryKey: ['notification-count'] })
+  }
+
+  const markReadMutation = useMutation({
+    mutationFn: (id: number) => markNotificationRead(id),
+    onSuccess: invalidateNotifications,
+  })
+
+  const markAllMutation = useMutation({
+    mutationFn: () => markAllNotificationsRead(),
+    onSuccess: invalidateNotifications,
+  })
+
+  /** Marks the notification read and follows its link, if any. */
+  const openNotification = (notif: NotificationDto): void => {
+    if (!notif.read) markReadMutation.mutate(notif.id)
+    if (notif.linkRoute) {
+      setNotifOpen(false)
+      void navigate(notif.linkRoute)
+    }
+  }
+
+  // Close the dropdown on outside click or Escape
+  useEffect(() => {
+    if (!notifOpen) return undefined
+    const onPointerDown = (e: PointerEvent): void => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setNotifOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [notifOpen])
 
   return (
     <header
@@ -119,11 +177,17 @@ export function TopBar(): ReactElement {
           {roleLabel}
         </span>
 
-        {/* Notification bell with unread count badge */}
+        {/* Notification bell with unread count badge + dropdown (wireframe #notif) */}
+        <div ref={notifRef} className="relative">
         <button
           type="button"
           aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
-          onClick={() => { void navigate('/my-tasks') }}
+          aria-expanded={notifOpen}
+          aria-haspopup="dialog"
+          onClick={() => {
+            setMenuOpen(false)
+            setNotifOpen((prev) => !prev)
+          }}
           className="
             relative flex items-center justify-center
             min-h-[44px] min-w-[44px] rounded-full
@@ -149,6 +213,60 @@ export function TopBar(): ReactElement {
           )}
         </button>
 
+          {notifOpen && (
+            <div
+              role="dialog"
+              aria-label="Notifications"
+              className="
+                absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] z-50
+                bg-white border border-gray-200 rounded-xl shadow-lg
+                overflow-hidden
+              "
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                <h2 className="text-sm font-semibold text-gray-900">Notifications</h2>
+                {(notifData?.content ?? []).some((n) => !n.read) && (
+                  <button
+                    type="button"
+                    onClick={() => markAllMutation.mutate()}
+                    disabled={markAllMutation.isPending}
+                    className="text-xs font-medium text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </div>
+
+              {notifData === undefined || notifData.content.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-6">No notifications.</p>
+              ) : (
+                <ul className="max-h-[60vh] overflow-y-auto divide-y divide-gray-100" aria-live="polite">
+                  {notifData.content.map((notif: NotificationDto) => (
+                    <li key={notif.id}>
+                      <button
+                        type="button"
+                        onClick={() => openNotification(notif)}
+                        aria-label={`${notif.title}: ${notif.message}${notif.read ? ' (read)' : ' (unread)'}`}
+                        className={`
+                          w-full text-left px-4 py-3 text-sm transition-colors
+                          focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500
+                          ${notif.read ? 'bg-white hover:bg-gray-50' : 'bg-blue-50 hover:bg-blue-100'}
+                        `}
+                      >
+                        <p className="text-gray-900">
+                          <span className={notif.read ? '' : 'font-semibold'}>{notif.title}</span>
+                          {notif.message !== '' && <span>: {notif.message}</span>}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">{formatDate(notif.createdAt.slice(0, 10))}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Initials button + dropdown */}
         <div className="relative">
           <button
@@ -156,7 +274,10 @@ export function TopBar(): ReactElement {
             aria-label="Open user menu"
             aria-expanded={menuOpen}
             aria-haspopup="menu"
-            onClick={() => setMenuOpen((prev) => !prev)}
+            onClick={() => {
+              setNotifOpen(false)
+              setMenuOpen((prev) => !prev)
+            }}
             className="
               flex items-center justify-center
               min-h-[44px] min-w-[44px] rounded-full

@@ -19,6 +19,7 @@ import { useToast } from '../../components/index'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
 import { buildTimerUpdate } from './settingsValidation'
+import { CARD, CARD_TITLE_ROW, CARD_TITLE, INLINE_FIELD, INLINE_SELECT, Switch } from './settingsUi'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +44,30 @@ const KPI_OPTIONS = [
   { value: 'HALF_YEARLY', label: 'Half-yearly' },
   { value: 'YEARLY', label: 'Yearly' },
 ]
+
+// ---------------------------------------------------------------------------
+// Recipient ("Task / e-mail goes to") options
+// ---------------------------------------------------------------------------
+
+/** Recipients HR can pick between for task/e-mail rules (setting.recipient_role values). */
+const EDITABLE_RECIPIENTS = ['MANAGER', 'HR', 'MANAGER_HR', 'EMPLOYEE', 'TASK_OWNER', 'IT_ADMIN']
+
+const RECIPIENT_LABELS: Record<string, string> = {
+  MANAGER: 'Manager',
+  HR: 'HR',
+  MANAGER_HR: 'Manager + HR',
+  EMPLOYEE: 'Employee',
+  TASK_OWNER: 'Task owner',
+  IT_ADMIN: 'IT admin',
+  ALL_USERS: 'All users',
+  NEW_USER: 'New user',
+  USER: 'User',
+}
+
+/** MANAGER_HR → "Manager + HR". */
+function recipientLabel(role: string): string {
+  return RECIPIENT_LABELS[role] ?? role
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,19 +104,20 @@ interface TimerRowProps {
 function TimerRow({ timer, edit, rowError, onChange }: TimerRowProps): ReactElement {
   const isKpiCycle = timer.code === 'KPI_CYCLE'
   const unitLabel = timer.valueUnit !== null ? timer.valueUnit.toLowerCase() : 'days'
+  const recipientEditable = timer.recipientRole !== null && EDITABLE_RECIPIENTS.includes(timer.recipientRole)
 
   return (
-    <tr className="bg-white hover:bg-gray-50">
+    <tr>
       {/* Rule name — read-only text (ADM-01) */}
-      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+      <td className="font-semibold">
         {timer.label}
       </td>
       {/* Module — read-only text (ADM-01) */}
-      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+      <td className="whitespace-nowrap">
         {timer.module}
       </td>
       {/* Value (editable) */}
-      <td className="px-4 py-3">
+      <td>
         {isKpiCycle ? (
           <div>
             <label htmlFor={`timer-val-${timer.code}`} className="sr-only">
@@ -103,7 +129,7 @@ function TimerRow({ timer, edit, rowError, onChange }: TimerRowProps): ReactElem
               onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                 onChange({ valueText: e.target.value })
               }
-              className="px-2 py-1 text-sm border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px]"
+              className={`${INLINE_SELECT} w-36`}
             >
               {KPI_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -117,7 +143,7 @@ function TimerRow({ timer, edit, rowError, onChange }: TimerRowProps): ReactElem
             <label htmlFor={`timer-val-${timer.code}`} className="sr-only">
               {timer.label} value in {unitLabel}
             </label>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2.5">
               <input
                 id={`timer-val-${timer.code}`}
                 type="number"
@@ -126,9 +152,9 @@ function TimerRow({ timer, edit, rowError, onChange }: TimerRowProps): ReactElem
                   onChange({ valueInt: parseInt(e.target.value, 10) || 0 })
                 }
                 min={1}
-                className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md bg-white text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px]"
+                className={`${INLINE_FIELD} w-[72px]`}
               />
-              <span className="text-sm text-gray-500">{unitLabel}</span>
+              <span className="text-xs text-gray-500 whitespace-nowrap">{unitLabel}</span>
             </div>
             {rowError !== null && (
               <p role="alert" className="mt-1 text-xs text-red-600">
@@ -138,47 +164,44 @@ function TimerRow({ timer, edit, rowError, onChange }: TimerRowProps): ReactElem
           </div>
         )}
       </td>
-      {/* Goes to (recipientRole) — shown as plain text; editable only where backend allows */}
-      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-        {timer.recipientRole !== null ? (
-          /* Recipient displayed as read-only text — per spec, recipient editing is not
-             explicitly shown as an input in the wireframe, only value/enabled toggle.
-             Keeping read-only here matches ADM-01 spirit and the wireframe layout. */
-          <span className="text-sm">{timer.recipientRole.replace(/_/g, ' ')}</span>
+      {/* Task / e-mail goes to (recipientRole) — editable per C30 */}
+      <td className="whitespace-nowrap">
+        {recipientEditable ? (
+          <>
+            <label htmlFor={`timer-to-${timer.code}`} className="sr-only">
+              {timer.label} goes to
+            </label>
+            <select
+              id={`timer-to-${timer.code}`}
+              value={edit.recipientRole ?? ''}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                onChange({ recipientRole: e.target.value })
+              }
+              className={`${INLINE_SELECT} w-36`}
+            >
+              {EDITABLE_RECIPIENTS.map((r) => (
+                <option key={r} value={r}>
+                  {recipientLabel(r)}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : timer.recipientRole !== null ? (
+          <span>{recipientLabel(timer.recipientRole)}</span>
         ) : (
           <span className="text-gray-300">—</span>
         )}
       </td>
-      {/* Active / Required toggle */}
-      <td className="px-4 py-3">
+      {/* Active switch, or "Required" when the rule cannot be switched off */}
+      <td className="text-center">
         {timer.canDisable ? (
-          <label className="relative inline-flex items-center cursor-pointer min-h-[44px]">
-            <input
-              type="checkbox"
-              checked={edit.enabled}
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                onChange({ enabled: e.target.checked })
-              }
-              className="sr-only peer"
-              aria-label={`Toggle ${timer.label}`}
-            />
-            {/* Custom toggle switch — accessible via keyboard (sr-only checkbox) */}
-            <div
-              aria-hidden="true"
-              className="
-                w-10 h-6 bg-gray-200 peer-focus-visible:outline-none
-                peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500
-                rounded-full peer
-                peer-checked:bg-green-500 peer-checked:
-                after:content-[''] after:absolute after:top-[2px] after:left-[2px]
-                after:bg-white after:border-gray-300 after:border after:rounded-full
-                after:h-5 after:w-5 after:transition-all
-                peer-checked:after:translate-x-full
-              "
-            />
-          </label>
+          <Switch
+            checked={edit.enabled}
+            onChange={(checked) => onChange({ enabled: checked })}
+            label={`Toggle ${timer.label}`}
+          />
         ) : (
-          <span className="text-xs text-gray-500 font-medium">Required</span>
+          <span className="text-xs text-gray-500">Required</span>
         )}
       </td>
     </tr>
@@ -309,28 +332,30 @@ export function TimersTab(): ReactElement {
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-base font-semibold text-gray-900">
-        Timers &amp; rules
-      </h2>
+    <section aria-labelledby="timers-heading" className={CARD}>
+      <div className={CARD_TITLE_ROW}>
+        <h2 id="timers-heading" className={CARD_TITLE}>
+          Timers &amp; rules
+        </h2>
+      </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-sm text-left text-gray-700">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+      <div className="wf-table-wrap">
+        <table className="wf-table">
+          <thead>
             <tr>
-              <th scope="col" className="px-4 py-3">Rule</th>
-              <th scope="col" className="px-4 py-3">Module</th>
-              <th scope="col" className="px-4 py-3">Value</th>
-              <th scope="col" className="px-4 py-3">Goes to</th>
-              <th scope="col" className="px-4 py-3">Active</th>
+              <th scope="col">Rule</th>
+              <th scope="col">Module</th>
+              <th scope="col">Value</th>
+              <th scope="col">Task / e-mail goes to</th>
+              <th scope="col" className="text-center">Active</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody>
             {isLoading &&
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
                   {Array.from({ length: 5 }).map((__, j) => (
-                    <td key={j} className="px-4 py-3">
+                    <td key={j}>
                       <div className="h-4 bg-gray-200 rounded w-24" />
                     </td>
                   ))}
@@ -338,7 +363,7 @@ export function TimersTab(): ReactElement {
               ))}
             {!isLoading && timers.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={5} className="text-center text-gray-400">
                   No timer settings found.
                 </td>
               </tr>
@@ -357,12 +382,12 @@ export function TimersTab(): ReactElement {
         </table>
       </div>
 
-      {/* Footer: Cancel (left, red outline) — Save (right, green) (R-UI-1) */}
-      <div className="flex justify-between pt-4 border-t border-gray-200">
+      {/* Footer inside the card: Cancel (left, red outline) — Save (right, green) (R-UI-1) */}
+      <div className="flex justify-between items-center mt-6 pt-4 border-t border-gray-200">
         <button
           type="button"
           onClick={handleCancel}
-          className="px-4 py-2 text-sm font-medium rounded-md border border-red-500 text-red-600 hover:bg-red-50 min-h-[44px] focus-visible:ring-2 focus-visible:ring-red-500"
+          className="inline-flex items-center h-[38px] px-[18px] text-xs font-semibold uppercase tracking-[0.4px] rounded-md border-[1.5px] border-red-500 text-red-600 bg-white hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-red-500"
         >
           Cancel
         </button>
@@ -370,12 +395,12 @@ export function TimersTab(): ReactElement {
           type="button"
           onClick={() => { void handleSave() }}
           disabled={saving}
-          className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
+          className="inline-flex items-center h-[38px] px-[18px] text-xs font-semibold uppercase tracking-[0.4px] rounded-md bg-green-600 hover:bg-green-700 text-white shadow-sm focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
-    </div>
+    </section>
   )
 }
 

@@ -16,10 +16,16 @@ export interface DepartmentDto {
   employeeCount: number
 }
 
-/** Response body for one job-title row (C04). Grade/department not in schema (spec §5 D-01). */
+/**
+ * Response body for one job-title row (C04). Grade/department added in V15 (spec §12 D-01);
+ * null for job titles created before then.
+ */
 export interface JobTitleDto {
   id: number
   name: string
+  grade: string | null
+  departmentId: number | null
+  departmentName: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -47,8 +53,8 @@ export function listJobTitles(): Promise<JobTitleDto[]> {
 }
 
 /** C05 — Create a new job title. Returns 201; 409 DUPLICATE_NAME if name taken. */
-export function createJobTitle(name: string): Promise<JobTitleDto> {
-  return apiPost<JobTitleDto>('/settings/job-titles', { name })
+export function createJobTitle(name: string, grade: string, departmentId: number): Promise<JobTitleDto> {
+  return apiPost<JobTitleDto>('/settings/job-titles', { name, grade, departmentId })
 }
 
 /** C06 — Delete a job title. Returns 204; 409 ITEM_IN_USE if employees use it (ADM-03). */

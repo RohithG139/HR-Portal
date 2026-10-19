@@ -111,6 +111,12 @@ services:
       start_period: 30s
     networks:
       - hr_app_network
+      # Keycloak e-mails the new-employee set-password link (F01 new-hire login, 2026-10-19) via
+      # its realm smtpServer. Mailcatcher's SMTP port 1025 is only reachable inside the engine
+      # stack's own network (never published to the host — see engine_stack_network below), so
+      # Keycloak joins that network directly and addresses the relay as `mailcatcher:1025`, the
+      # same cross-project pattern hr-backend already uses for its own SMTP.
+      - engine_stack_network
 
   # ── DEV container: Spring Boot backend ──────────────────────────────────────
   # Runs ./mvnw spring-boot:run against the bind-mounted host source. Maven
@@ -167,6 +173,14 @@ services:
       # RealCaseEngineClient's class doc for the full reasoning.
       CUBEWORKS_ENGINE_BASE_URL: http://host.docker.internal:2027
       CUBEWORKS_ENGINE_KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/cubeworks-hr/protocol/openid-connect/token
+      # Keycloak admin API, used to create a login account + send the set-password e-mail for each
+      # new employee (F01 new-hire login, 2026-10-19). Same host-vs-container split as the engine
+      # config above: from the container, Keycloak is the Docker service name keycloak:8080, not the
+      # host-published localhost:8180. The token URL must match the engine's so hr-backend's own
+      # service-account token is accepted; its realm-management roles (manage-users/view-users) are
+      # granted in infra/keycloak/cubeworks-hr-realm.json.
+      CUBEWORKS_KEYCLOAK_ADMIN_BASE_URL: http://keycloak:8080
+      CUBEWORKS_KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/cubeworks-hr/protocol/openid-connect/token
       # Mailcatcher (casefabric/getting-started/docker-compose.yml, SMTP port 1025). Unlike
       # the engine connection above, this is NOT reached via host.docker.internal: port 1025
       # is only `expose`d on that project's own network, never published to the host (only

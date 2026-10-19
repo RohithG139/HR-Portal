@@ -23,6 +23,8 @@ import { Modal, Field, useToast } from '../../components/index'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
 import { validateCcField } from './settingsValidation'
+import { CARD, CARD_TITLE_ROW, CARD_TITLE, SECONDARY_BTN, TABLE_TOOLBAR, SEARCH_INPUT, SortHeader, Switch, sortRows, UNSORTED } from './settingsUi'
+import type { SortState } from './settingsUi'
 
 // ---------------------------------------------------------------------------
 // Placeholder chip helpers
@@ -366,42 +368,109 @@ function EmailEditModal({ templateCode, onClose, onSaved }: EditModalProps): Rea
  */
 export function EmailTemplatesTab(): ReactElement {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [editingCode, setEditingCode] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<SortState>(UNSORTED)
+  const [togglingCode, setTogglingCode] = useState<string | null>(null)
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ['settings', 'email-templates'],
     queryFn: listEmailTemplates,
   })
 
-  const templateList = templates ?? []
+  const q = search.trim().toLowerCase()
+  const templateList = sortRows(
+    (templates ?? []).filter((t) =>
+      q === '' ||
+      t.name.toLowerCase().includes(q) ||
+      t.triggerDescription.toLowerCase().includes(q) ||
+      t.recipientsSummary.toLowerCase().includes(q)),
+    sort,
+    (t, key) => {
+      switch (key) {
+        case 'trigger': return t.triggerDescription
+        case 'recipients': return t.recipientsSummary
+        case 'active': return t.active ? 0 : 1
+        default: return t.name
+      }
+    },
+  )
 
   const invalidate = (): void => {
     void queryClient.invalidateQueries({ queryKey: ['settings', 'email-templates'] })
   }
 
-  return (
-    <div className="space-y-4">
-      <h2 className="text-base font-semibold text-gray-900">
-        E-mail templates
-      </h2>
+  /**
+   * Inline Active switch (wireframe): reads the template's current detail (C26) and saves it
+   * back with only `active` flipped (C27) — same endpoint and version check as the Edit pop-up.
+   */
+  const handleToggleActive = async (code: string, active: boolean): Promise<void> => {
+    setTogglingCode(code)
+    try {
+      const d = await getEmailTemplate(code)
+      await updateEmailTemplate(code, {
+        name: d.name,
+        triggerDescription: d.triggerDescription,
+        subject: d.subject,
+        body: d.body,
+        cc: d.cc,
+        toEmployee: d.toEmployee,
+        toManager: d.toManager,
+        toHr: d.toHr,
+        toItAdmin: d.toItAdmin,
+        toTaskOwner: d.toTaskOwner,
+        toPeer: d.toPeer,
+        active,
+        version: d.version,
+      })
+      showToast(active ? 'Template switched on.' : 'Template switched off.', 'success')
+      invalidate()
+      void queryClient.invalidateQueries({ queryKey: ['settings', 'email-template', code] })
+    } catch {
+      showToast('Failed to update template.', 'error')
+    } finally {
+      setTogglingCode(null)
+    }
+  }
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-sm text-left text-gray-700">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+  return (
+    <section aria-labelledby="emails-heading" className={CARD}>
+      <div className={CARD_TITLE_ROW}>
+        <h2 id="emails-heading" className={CARD_TITLE}>
+          E-mail templates
+        </h2>
+      </div>
+
+      <div className="wf-table-wrap">
+        {/* Search toolbar (R-UI-2, wireframe .table-toolbar) */}
+        <div className={TABLE_TOOLBAR}>
+          <label htmlFor="email-template-search" className="sr-only">Search templates</label>
+          <input
+            id="email-template-search"
+            type="search"
+            placeholder="Search templates…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className={SEARCH_INPUT}
+          />
+        </div>
+        <table className="wf-table">
+          <thead>
             <tr>
-              <th scope="col" className="px-4 py-3">Template</th>
-              <th scope="col" className="px-4 py-3">Sent when</th>
-              <th scope="col" className="px-4 py-3">Recipients</th>
-              <th scope="col" className="px-4 py-3">Active</th>
-              <th scope="col" className="px-4 py-3">Action</th>
+              <SortHeader label="Template" sortKey="name" sort={sort} onSort={setSort} />
+              <SortHeader label="Sent when" sortKey="trigger" sort={sort} onSort={setSort} />
+              <SortHeader label="Recipients" sortKey="recipients" sort={sort} onSort={setSort} />
+              <SortHeader label="Active" sortKey="active" sort={sort} onSort={setSort} center />
+              <th scope="col" className="text-center">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200">
+          <tbody>
             {isLoading &&
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
                   {Array.from({ length: 5 }).map((__, j) => (
-                    <td key={j} className="px-4 py-3">
+                    <td key={j}>
                       <div className="h-4 bg-gray-200 rounded w-32" />
                     </td>
                   ))}
@@ -409,41 +478,31 @@ export function EmailTemplatesTab(): ReactElement {
               ))}
             {!isLoading && templateList.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={5} className="text-center text-gray-400">
                   No templates found.
                 </td>
               </tr>
             )}
             {!isLoading &&
               templateList.map((tmpl) => (
-                <tr
-                  key={tmpl.code}
-                  className="bg-white hover:bg-gray-50"
-                >
-                  <td className="px-4 py-3 font-medium">{tmpl.name}</td>
-                  <td className="px-4 py-3 text-gray-500 max-w-xs truncate">
-                    {tmpl.triggerDescription}
+                <tr key={tmpl.code}>
+                  <td className="font-semibold">{tmpl.name}</td>
+                  <td>{tmpl.triggerDescription}</td>
+                  <td>{tmpl.recipientsSummary}</td>
+                  <td className="text-center">
+                    <Switch
+                      checked={tmpl.active}
+                      disabled={togglingCode === tmpl.code}
+                      onChange={(checked) => { void handleToggleActive(tmpl.code, checked) }}
+                      label={`${tmpl.name} active`}
+                    />
                   </td>
-                  <td className="px-4 py-3 text-gray-500 max-w-xs truncate">
-                    {tmpl.recipientsSummary}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={[
-                        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                        tmpl.active
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-600',
-                      ].join(' ')}
-                    >
-                      {tmpl.active ? 'On' : 'Off'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="text-center">
                     <button
                       type="button"
                       onClick={() => setEditingCode(tmpl.code)}
-                      className="text-sm text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded min-h-[44px] px-1"
+                      aria-label={`Edit ${tmpl.name}`}
+                      className={SECONDARY_BTN}
                     >
                       Edit
                     </button>
@@ -466,6 +525,6 @@ export function EmailTemplatesTab(): ReactElement {
           }}
         />
       )}
-    </div>
+    </section>
   )
 }

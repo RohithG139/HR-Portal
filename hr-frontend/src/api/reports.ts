@@ -1,5 +1,5 @@
 /**
- * API module for FRD-08 Reports endpoints (C31–C47).
+ * API module for FRD-08 Reports endpoints (C31–C48).
  *
  * All report endpoints are HR-only (FRD-08 §2, AC-17).
  * DTO field names match the Java records in `dto/reports/` exactly (R-SRC-2, R-CODE-3).
@@ -20,6 +20,14 @@ export interface SummaryDto {
   /** Percentage 0–100; 0.0 when no round is open */
   appraisalCompletionRate: number
   unreturnedAssetCount: number
+  /** Joiners minus leavers over the last month; may be negative ("+2 vs last month") */
+  headcountChangeVsLastMonth: number
+  /** Allocation pool size; denominator for "8% of billable staff" */
+  billableStaffCount: number
+  /** Year of the open round's review period end; null when no round is open ("Round 2026") */
+  appraisalRoundYear: number | null
+  /** Ex-employees still holding unreturned assets ("1 ex-employee") */
+  unreturnedAssetExEmployeeCount: number
 }
 
 /** One row in the Headcount report (S8 / C32). */
@@ -180,6 +188,11 @@ export interface UnreturnedAssetsParams {
 /** C31 — Summary KPI tiles for the reports overview (S7). */
 export function getSummary(): Promise<SummaryDto> {
   return apiGet<SummaryDto>('/reports/summary')
+}
+
+/** C48 — "Export all to Excel": one workbook, one sheet per report; triggers browser download. */
+export function exportAllReports(): Promise<void> {
+  return apiDownload('/reports/export', 'reports.xlsx')
 }
 
 /** C32 — Headcount report rows, optionally filtered by department. */

@@ -25,8 +25,22 @@ vi.mock('../../api/settingsDepartments', () => ({
   listJobTitles: vi.fn().mockResolvedValue([]),
   createDepartment: vi.fn().mockResolvedValue({ id: 1, name: 'Development', employeeCount: 0 }),
   deleteDepartment: vi.fn().mockResolvedValue(undefined),
-  createJobTitle: vi.fn().mockResolvedValue({ id: 1, name: 'Developer' }),
+  createJobTitle: vi.fn().mockResolvedValue({
+    id: 1, name: 'Developer', grade: 'MEDIOR', departmentId: 1, departmentName: 'Development',
+  }),
   deleteJobTitle: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('../../api/lookups', () => ({
+  getOnboardingLookups: vi.fn().mockResolvedValue({
+    departments: [],
+    jobTitles: [],
+    managers: [],
+    buddies: [],
+    grades: ['JUNIOR', 'MEDIOR', 'SENIOR', 'SENIOR_I', 'SENIOR_II'],
+    appRoles: [],
+    templates: [],
+  }),
 }))
 
 // Import the mocked module so we can override per-test
@@ -113,5 +127,47 @@ describe('DepartmentsTab', () => {
 
     // "This field is required." must appear (spec §5 S1, R-SRC-3)
     expect(screen.getByText('This field is required.')).toBeTruthy()
+  })
+
+  it('shows grade and department columns for job titles, "—" when not set', async () => {
+    vi.mocked(deptApi.listJobTitles).mockResolvedValue([
+      { id: 1, name: 'Lead Developer', grade: 'SENIOR_II', departmentId: 1, departmentName: 'Development' },
+      { id: 2, name: 'Legacy Title', grade: null, departmentId: null, departmentName: null },
+    ])
+    render(<DepartmentsTab />, { wrapper: Wrapper })
+
+    expect(await screen.findByText('Senior II')).toBeTruthy()
+    expect(screen.getByText('Development')).toBeTruthy()
+    expect(screen.getAllByText('—').length).toBe(2)
+  })
+
+  it('add job title requires grade and department, then sends them', async () => {
+    vi.mocked(deptApi.listDepartments).mockResolvedValue([
+      { id: 7, name: 'Design', employeeCount: 8 },
+    ])
+    render(<DepartmentsTab />, { wrapper: Wrapper })
+    await screen.findByText('Design')
+
+    fireEvent.click(screen.getByText(/\+ Add job title/i))
+    fireEvent.change(screen.getByRole('textbox', { name: /job title/i }), { target: { value: 'UX Designer' } })
+    const submit = (): void => {
+      const buttons = screen.getAllByRole('button', { name: /add job title/i })
+      fireEvent.click(buttons[buttons.length - 1]!)
+    }
+
+    submit()
+    expect(screen.getAllByText('This field is required.').length).toBe(2)
+    expect(vi.mocked(deptApi.createJobTitle)).not.toHaveBeenCalled()
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Medior' })).toBeTruthy()
+    })
+    fireEvent.change(screen.getByRole('combobox', { name: /grade/i }), { target: { value: 'MEDIOR' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /department/i }), { target: { value: '7' } })
+    submit()
+
+    await waitFor(() => {
+      expect(vi.mocked(deptApi.createJobTitle)).toHaveBeenCalledWith('UX Designer', 'MEDIOR', 7)
+    })
   })
 })

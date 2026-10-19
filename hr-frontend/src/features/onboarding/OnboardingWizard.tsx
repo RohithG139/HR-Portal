@@ -9,7 +9,7 @@
  * Route: { path: '/onboarding/:employeeId', element: <OnboardingWizard /> }
  */
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useParams, useSearchParams, useLocation, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -79,6 +79,13 @@ export function OnboardingWizard(): ReactElement {
 
   const employeeName = summary?.employeeName ?? 'New employee'
 
+  // Green "done" pills: details saved (employee exists), IT request sent, every checklist item done
+  const stepDone: [boolean, boolean, boolean] = [
+    effectiveEmployeeId !== null,
+    summary?.itSentAt != null,
+    summary !== undefined && summary.totalItems > 0 && summary.doneItems === summary.totalItems,
+  ]
+
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       {/* Back link */}
@@ -97,36 +104,44 @@ export function OnboardingWizard(): ReactElement {
         <span className="text-sm text-gray-500">Onboarding</span>
       </div>
 
-      {/* Step tabs */}
+      {/* Step tabs — wireframe .bcrumb.steptabs: pills joined by arrows;
+          current = blue, done = green, upcoming = grey */}
       <div
         role="tablist"
         aria-label="Onboarding steps"
-        className="flex gap-0 border-b border-gray-200"
+        className="flex flex-wrap items-center gap-2"
       >
         {STEP_LABELS.map((label, idx) => {
           const step = idx as WizardStep
           // Only allow navigation to steps after step 1 once the employee exists
           const disabled = step > 0 && effectiveEmployeeId === null
+          const current = activeStep === step
+          const done = stepDone[step]
           return (
-            <button
-              key={step}
-              type="button"
-              role="tab"
-              aria-selected={activeStep === step}
-              aria-controls={`step-panel-${step}`}
-              disabled={disabled}
-              onClick={() => { if (!disabled) goToStep(step) }}
-              className={[
-                'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors min-h-[44px]',
-                'focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none',
-                activeStep === step
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700',
-                disabled ? 'opacity-40 cursor-not-allowed' : '',
-              ].join(' ')}
-            >
-              {label}
-            </button>
+            <Fragment key={step}>
+              {idx > 0 && <span aria-hidden="true" className="text-gray-400">→</span>}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={current}
+                aria-controls={`step-panel-${step}`}
+                disabled={disabled}
+                onClick={() => { if (!disabled) goToStep(step) }}
+                className={[
+                  'px-3.5 py-1.5 text-sm rounded-md border transition-colors',
+                  'focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none',
+                  current
+                    ? 'bg-blue-600 border-blue-600 text-white font-semibold'
+                    : done
+                      ? 'bg-green-100 border-green-300 text-green-800 font-medium hover:border-blue-600'
+                      : 'bg-gray-50 border-gray-200 text-gray-500 font-medium hover:border-blue-600',
+                  disabled ? 'opacity-50 cursor-not-allowed hover:border-gray-200' : 'cursor-pointer',
+                ].join(' ')}
+              >
+                {label}
+                {done && !current && <span className="sr-only"> (done)</span>}
+              </button>
+            </Fragment>
           )
         })}
       </div>

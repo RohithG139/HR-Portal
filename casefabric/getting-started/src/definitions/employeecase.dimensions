@@ -1,0 +1,27 @@
+<CMMNDI xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <CMMNDiagram>
+        <CMMNShape cmmnElementRef="cm_employeecase.case_employeecase_0">
+            <Bounds x="20" y="10" width="620" height="340"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_onboarding_checklist">
+            <Bounds x="80" y="70" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_employee_onboarded">
+            <Bounds x="380" y="90" width="120" height="40"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="ec_employee_onboarded">
+            <Bounds x="374" y="100" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_equipment_request">
+            <Bounds x="80" y="220" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_remaining_setup">
+            <Bounds x="380" y="220" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="ec_remaining_setup">
+            <Bounds x="374" y="250" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNEdge sourceCMMNElementRef="pi_onboarding_checklist" targetCMMNElementRef="ec_employee_onboarded"/>
+        <CMMNEdge sourceCMMNElementRef="pi_equipment_request" targetCMMNElementRef="ec_remaining_setup"/>
+    </CMMNDiagram>
+</CMMNDI>

@@ -62,6 +62,8 @@ public class EmployeeService {
     private final com.cubeworks.hr.security.SelfActionGuard selfActionGuard;
     private final com.cubeworks.hr.common.outbox.EmailOutboxService emailOutboxService;
     private final AssetRepository assetRepository;
+    private final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient;
+    private final com.cubeworks.hr.settings.SettingRepository settingRepository;
 
     /**
      * Constructor injection (R-CODE-1).
@@ -74,7 +76,9 @@ public class EmployeeService {
                            final ObjectMapper objectMapper,
                            final com.cubeworks.hr.security.SelfActionGuard selfActionGuard,
                            final com.cubeworks.hr.common.outbox.EmailOutboxService emailOutboxService,
-                           final AssetRepository assetRepository) {
+                           final AssetRepository assetRepository,
+                           final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient,
+                           final com.cubeworks.hr.settings.SettingRepository settingRepository) {
         this.employeeRepository = employeeRepository;
         this.draftRepository = draftRepository;
         this.contractRepository = contractRepository;
@@ -84,6 +88,8 @@ public class EmployeeService {
         this.selfActionGuard = selfActionGuard;
         this.emailOutboxService = emailOutboxService;
         this.assetRepository = assetRepository;
+        this.keycloakAdminClient = keycloakAdminClient;
+        this.settingRepository = settingRepository;
     }
 
     /**
@@ -272,11 +278,24 @@ public class EmployeeService {
             throw new ApiException(ErrorCodes.ALREADY_LOGGED_IN, HttpStatus.CONFLICT,
                     "Employee has already logged in; cannot resend invite");
         }
-        emailOutboxService.enqueue("SET_PASSWORD", emp.getPrivateEmail(),
-                "Set your password — CubeWorks HR",
-                "Please set your password by clicking the link.", emp);
+        // Keycloak owns the set-password link (F01 new-hire login, 2026-10-19). If the account was
+        // never provisioned (idp_subject null — e.g. an employee created before this feature, or a
+        // create whose Keycloak call had failed), create it now; otherwise just re-send the link.
+        String kcUserId = emp.getIdpSubject();
+        if (kcUserId == null) {
+            kcUserId = keycloakAdminClient.createUserWithRole(
+                    emp.getPrivateEmail(), emp.getPrivateEmail(),
+                    emp.getFirstName(), emp.getLastName(), emp.getAppRole().name());
+            emp.setIdpSubject(kcUserId);
+            emp.setAccountStatus(AccountStatus.INVITED);
+            employeeRepository.save(emp);
+        }
+        final int setPasswordLinkDays = settingRepository.findById("SET_PASSWORD_LINK_DAYS")
+                .map(s -> s.getValueInt() != null ? s.getValueInt() : 7).orElse(7);
+        keycloakAdminClient.sendSetPasswordEmail(kcUserId, setPasswordLinkDays * 86400);
         auditLogService.record(emp, "EMPLOYEE", emp.getId(), "RESEND_INVITE", caller, null, null);
-        log.info("Resend invite queued for employee {} by HR {}", emp.getId(), caller.getId());
+        log.info("Resend invite (Keycloak set-password) sent for employee {} by HR {}",
+                emp.getId(), caller.getId());
     }
 
     /**

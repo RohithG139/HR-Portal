@@ -194,8 +194,12 @@ public class RealCaseEngineClient implements CaseEngineClient {
                 .orElseThrow(() -> new IllegalStateException(
                         "No plan item named '" + planItemName + "' on case " + caseId));
 
+        // "manualStart", not "start": the plan item has a manualActivationRule so it waits in
+        // Enabled, and the engine answers 200 to "start" on an Enabled item without changing its
+        // state (confirmed live 2026-10-19, case E-0015 stayed Enabled). "manualStart" moves it
+        // to Active.
         restClient.post()
-                .uri(engineBaseUrl + "/cases/{caseId}/planitems/{planItemId}/start", caseId, planItemId)
+                .uri(engineBaseUrl + "/cases/{caseId}/planitems/{planItemId}/manualStart", caseId, planItemId)
                 .header("Authorization", "Bearer " + getAccessToken())
                 .retrieve()
                 .toBodilessEntity();

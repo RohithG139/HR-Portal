@@ -111,9 +111,74 @@ public class ReportService {
         final long bench = countBench();
         final BigDecimal appraisalRate = computeAppraisalCompletionRate();
         final long assets = countUnreturnedAssets();
-        log.debug("Summary: headcount={} bench={} appraisalRate={} assets={}",
-                headcount, bench, appraisalRate, assets);
-        return new SummaryDto(headcount, bench, appraisalRate, assets);
+        final long headcountChange = countHeadcountChangeVsLastMonth();
+        final long billable = countBillableStaff();
+        final Integer roundYear = findOpenAppraisalRoundYear();
+        final long assetExEmployees = countUnreturnedAssetExEmployees();
+        log.debug("Summary: headcount={} bench={} appraisalRate={} assets={} headcountChange={} "
+                        + "billable={} roundYear={} assetExEmployees={}",
+                headcount, bench, appraisalRate, assets, headcountChange, billable, roundYear,
+                assetExEmployees);
+        return new SummaryDto(headcount, bench, appraisalRate, assets,
+                headcountChange, billable, roundYear, assetExEmployees);
+    }
+
+    /**
+     * Net headcount change over the last month: joiners (first contract starts in the window)
+     * minus leavers (non-rejected exit whose last working day falls in the window).
+     *
+     * @return joiners minus leavers in {@code (today - 1 month, today]}; may be negative
+     */
+    private long countHeadcountChangeVsLastMonth() {
+        final Long result = jdbc.queryForObject("""
+                SELECT
+                  (SELECT count(*) FROM hr.employee e
+                   WHERE (SELECT min(c.start_date) FROM hr.contract c WHERE c.employee_id = e.id)
+                         BETWEEN (current_date - interval '1 month')::date + 1 AND current_date)
+                  -
+                  (SELECT count(DISTINCT ee.employee_id) FROM hr.employee_exit ee
+                   WHERE ee.status <> 'REJECTED'
+                     AND ee.last_working_day BETWEEN (current_date - interval '1 month')::date + 1
+                                                 AND current_date)
+                """, Map.of(), Long.class);
+        return result != null ? result : 0L;
+    }
+
+    /**
+     * Billable staff — the allocation pool used by the Project Allocation report
+     * ({@code v_employee_allocation}: everyone not ARCHIVED or OFFBOARDING).
+     *
+     * @return number of employees in the allocation pool
+     */
+    private long countBillableStaff() {
+        final Long result = jdbc.queryForObject(
+                "SELECT count(*) FROM hr.v_employee_allocation", Map.of(), Long.class);
+        return result != null ? result : 0L;
+    }
+
+    /**
+     * Year of the open appraisal round, taken from its review period end.
+     *
+     * @return the year, or {@code null} when no round is open
+     */
+    private Integer findOpenAppraisalRoundYear() {
+        return jdbc.queryForObject(
+                "SELECT max(extract(year FROM review_period_end))::int "
+                        + "FROM hr.appraisal_round WHERE status = 'OPEN'",
+                Map.of(), Integer.class);
+    }
+
+    /**
+     * Distinct employees holding unreturned assets whose last working day has passed.
+     *
+     * @return number of ex-employees with unreturned assets
+     */
+    private long countUnreturnedAssetExEmployees() {
+        final Long result = jdbc.queryForObject(
+                "SELECT count(DISTINCT employee_id) FROM hr.v_unreturned_assets "
+                        + "WHERE last_working_day < current_date",
+                Map.of(), Long.class);
+        return result != null ? result : 0L;
     }
 
     /**

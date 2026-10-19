@@ -1209,4 +1209,24 @@ class MigrationConstraintTests extends AbstractIntegrationTest {
                         """)
         );
     }
+
+    /**
+     * V15: {@code job_title.grade} CHECK only allows the fixed grade list.
+     */
+    @Test
+    void jobTitle_invalidGrade_fails() {
+        assertThrows(DataIntegrityViolationException.class, () ->
+                jdbc.update("INSERT INTO hr.job_title (name, grade) VALUES ('Bad Grade Title', 'PRINCIPAL')")
+        );
+    }
+
+    /**
+     * V15: {@code job_title.department_id} is a FK on {@code department}.
+     */
+    @Test
+    void jobTitle_nonExistentDepartment_fails() {
+        assertThrows(DataIntegrityViolationException.class, () ->
+                jdbc.update("INSERT INTO hr.job_title (name, department_id) VALUES ('Orphan Dept Title', 999999)")
+        );
+    }
 }

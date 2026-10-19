@@ -79,16 +79,16 @@ export function SettingsPage(): ReactElement {
       </a>
 
       {/* Page title */}
-      <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+      <h1 className="font-display text-[22px] font-bold tracking-[-0.3px] text-gray-900">
         Settings
       </h1>
 
-      {/* Tab bar */}
+      {/* Tab bar — wireframe .tabs / .tab.on */}
       <nav aria-label="Settings tabs">
         <div
           role="tablist"
           aria-label="Settings sections"
-          className="flex flex-wrap gap-1 border-b border-gray-200 pb-0"
+          className="flex flex-wrap gap-1 border-b-2 border-gray-200"
         >
           {TABS.map((tab) => {
             const isActive = tab.id === activeTab
@@ -102,11 +102,11 @@ export function SettingsPage(): ReactElement {
                 id={`tab-${tab.id}`}
                 onClick={() => handleTabChange(tab.id)}
                 className={[
-                  'px-4 py-2 text-sm font-medium rounded-t-md border-b-2 min-h-[44px]',
+                  'px-[22px] py-[11px] -mb-[2px] text-[13px] font-semibold tracking-[0.2px] border-b-[3px] min-h-[44px]',
                   'focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors',
                   isActive
-                    ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300',
+                    ? 'border-blue-600 text-blue-600 bg-gradient-to-b from-blue-50 to-transparent'
+                    : 'border-transparent text-gray-500 hover:text-blue-600',
                 ].join(' ')}
               >
                 {tab.label}

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * REST controller for FRD-08 report endpoints (C31–C47).
+ * REST controller for FRD-08 report endpoints (C31–C48).
  *
  * <h2>Authorization</h2>
  * <p>All report endpoints are HR-only (FRD-08 §2, AC-17).  The {@code @PreAuthorize}
@@ -50,6 +50,28 @@ public class ReportController {
     @GetMapping("/summary")
     public ResponseEntity<SummaryDto> getSummary() {
         return ResponseEntity.ok(reportService.getSummary());
+    }
+
+    // ── C48 — Export all ──────────────────────────────────────────────────────
+
+    /**
+     * C48 — "Export all to Excel" on the reports overview (S7): one workbook, one sheet per
+     * report, each unfiltered and taken from the same service method as its JSON endpoint.
+     *
+     * @return 200 with Excel attachment
+     */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportAll() {
+        final byte[] xlsx = ReportExcelBuilder.buildAll(
+                reportService.getHeadcount(null),
+                reportService.getBench(null, null, null, null),
+                reportService.getAllocation(null, null, null, null),
+                reportService.getAppraisalStatus(null, null, null, null, null),
+                reportService.getPips(null, null, null),
+                reportService.getOnboarding(null, null),
+                reportService.getContractsProbation(null),
+                reportService.getUnreturnedAssets(null));
+        return ReportExcelBuilder.response("reports.xlsx", xlsx);
     }
 
     // ── C32 / C33 — Headcount ─────────────────────────────────────────────────

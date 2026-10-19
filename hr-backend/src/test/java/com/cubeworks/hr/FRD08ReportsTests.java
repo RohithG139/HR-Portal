@@ -13,7 +13,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <h2>Coverage</h2>
  * <pre>
- * C31  Summary returns four numeric KPI fields
+ * C31  Summary returns four numeric KPI fields plus the four tile caption fields
+ * C48  Export all returns one XLSX with one sheet per report
  * C32  Headcount returns one row per department; departmentId filter works
  * C33  Headcount export returns XLSX attachment
  * C34  Bench returns employees with no active assignment; managerId + q filters work
@@ -166,6 +167,36 @@ class FRD08ReportsTests extends AbstractApiTest {
         perform(get("/api/reports/summary").with(asHR()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unreturnedAssetCount").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    @DisplayName("C31: getSummary_asHR_returnsKpiCaptionFields")
+    void getSummary_asHR_returnsKpiCaptionFields() throws Exception {
+        perform(get("/api/reports/summary").with(asHR()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.headcountChangeVsLastMonth").isNumber())
+                .andExpect(jsonPath("$.billableStaffCount").value(greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.appraisalRoundYear").hasJsonPath())
+                .andExpect(jsonPath("$.unreturnedAssetExEmployeeCount").value(greaterThanOrEqualTo(0)));
+    }
+
+    // ── C48 — Export all ──────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("C48: exportAll_asHR_returnsXlsxWithEightSheets")
+    void exportAll_asHR_returnsXlsxWithEightSheets() throws Exception {
+        final byte[] body = perform(get("/api/reports/export").with(asHR()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(XLSX_CONTENT_TYPE))
+                .andExpect(header().string("Content-Disposition",
+                        containsString("reports.xlsx")))
+                .andReturn().getResponse().getContentAsByteArray();
+        try (final org.apache.poi.xssf.usermodel.XSSFWorkbook wb =
+                     new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(body))) {
+            org.junit.jupiter.api.Assertions.assertEquals(8, wb.getNumberOfSheets());
+            org.junit.jupiter.api.Assertions.assertEquals("Headcount", wb.getSheetName(0));
+            org.junit.jupiter.api.Assertions.assertEquals("Unreturned Assets", wb.getSheetName(7));
+        }
     }
 
     // ── C32 / C33 — Headcount ─────────────────────────────────────────────────

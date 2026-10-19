@@ -81,7 +81,7 @@ class FRD08SettingsValidationTests extends AbstractApiTest {
     void createJobTitle_givenBlankName_returns400WithExactMessage() throws Exception {
         perform(withJson(post("/api/settings/job-titles"),
                 """
-                {"name":"  "}
+                {"name":"  ","grade":"MEDIOR","departmentId":1}
                 """).with(asHR()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
@@ -130,11 +130,37 @@ class FRD08SettingsValidationTests extends AbstractApiTest {
     }
 
     @Test
+    @DisplayName("AC-09: createJobTitle_givenNoGradeOrDepartment_returns400WithExactMessages")
+    void createJobTitle_givenNoGradeOrDepartment_returns400WithExactMessages() throws Exception {
+        perform(withJson(post("/api/settings/job-titles"),
+                """
+                {"name":"Gradeless Title"}
+                """).with(asHR()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[?(@.field == 'grade')].message")
+                        .value(hasItem("This field is required.")))
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentId')].message")
+                        .value(hasItem("This field is required.")));
+    }
+
+    @Test
+    @DisplayName("createJobTitle_givenUnknownDepartment_returns404")
+    void createJobTitle_givenUnknownDepartment_returns404() throws Exception {
+        perform(withJson(post("/api/settings/job-titles"),
+                """
+                {"name":"Orphan Title","grade":"JUNIOR","departmentId":999999}
+                """).with(asHR()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
     @DisplayName("AC-10: createJobTitle_givenExistingName_returns409DuplicateName")
     void createJobTitle_givenExistingName_returns409DuplicateName() throws Exception {
         perform(withJson(post("/api/settings/job-titles"),
                 """
-                {"name":"Developer"}
+                {"name":"Developer","grade":"MEDIOR","departmentId":1}
                 """).with(asHR()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DUPLICATE_NAME"))

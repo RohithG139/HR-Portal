@@ -142,7 +142,20 @@ cubeworks:
     # with the live engine (POST /tenant/world/users, as an existing tenant owner — self-
     # registration is rejected) — editing this value and the bootstrap file is necessary but not
     # sufficient on its own for an engine that has already bootstrapped its "world" tenant once.
+    #
+    # Drifted again 2026-10-19 (live sub became 5f9fd6a5-...). infra/keycloak/cubeworks-hr-realm.json
+    # now pins the service-account user ("serviceAccountClientId": "hr-backend") to this exact id,
+    # so any future realm import recreates it with the same sub instead of a fresh random one.
     service-account-user-id: b9d462ff-4185-44be-83fa-7beae8250602
+  # Keycloak admin API for new-employee login provisioning (F01 new-hire login, 2026-10-19).
+  # Host-mode defaults; the containerized hr-backend overrides admin-base-url and token-url to the
+  # Docker service name via CUBEWORKS_KEYCLOAK_ADMIN_BASE_URL / CUBEWORKS_KEYCLOAK_TOKEN_URL.
+  keycloak:
+    admin-base-url: http://localhost:8180
+    realm: cubeworks-hr
+    token-url: http://localhost:8180/realms/cubeworks-hr/protocol/openid-connect/token
+    client-id: hr-backend
+    client-secret: hr-backend-dev-secret-change-for-prod
 
 server:
   port: 8080

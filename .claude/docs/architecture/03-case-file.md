@@ -10,6 +10,7 @@
 | Date | Change |
 |---|---|
 | 2026-10-15 | F01 D-18 approved: **+`Onboarding.itSetupComplete`** (boolean), so "Remaining setup" is raised only when IT work is actually left after "Equipment request" completes. |
+| 2026-10-19 | **+`Onboarding.itReadyBy`** (date, optional): engine due date for "Equipment request" / "Remaining setup" (F01 §8 "ready by" date). |
 
 ## 1. Principles
 
@@ -33,6 +34,7 @@
 | | overdueEnabled | boolean | Spring (start) | guard on that timer | setting.enabled |
 | | completed | boolean | output of HR's onboarding task | milestone "Employee onboarded" | onboarding.status |
 | | itSetupComplete | boolean | Spring, output of "Equipment request" = true when no `checklist_item` with `owner_role='IT_ADMIN'` is still OPEN for this employee, else false | sentry: "Remaining setup" (IT admin) is raised only when false (F01 D-18) | checklist_item (IT_ADMIN items) |
+| | itReadyBy | date | Spring (Send to IT), same update as itRequestSent | due date of "Equipment request" and "Remaining setup" | onboarding.it_ready_by |
 | **Probation** (0..1; absent when probation = None) | reviewId | long | Spring | link | review (PROBATION) |
 | | reviewDate | date-time | Spring = probation end − PROBATION_REVIEW | timer → "Probation review" (Manager) | v_contract |
 | | outcome | CONFIRM / END | task output | CONFIRM → "Probation passed"; END → HR approval | review.outcome |

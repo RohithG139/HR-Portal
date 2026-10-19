@@ -30,6 +30,8 @@ import type { JobTitleDto } from '../../api/settingsDepartments'
 import { Modal, Field, useToast } from '../../components/index'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
+import { CARD, CARD_TITLE_ROW, CARD_TITLE, ADD_BTN, SECONDARY_BTN, REMOVE_BTN, CloseIcon, SortHeader, sortRows, tabClass, UNSORTED } from './settingsUi'
+import type { SortState } from './settingsUi'
 
 // ---------------------------------------------------------------------------
 // Section / owner options
@@ -55,6 +57,24 @@ const OWNER_OPTIONS = [
   { value: 'MANAGER', label: 'Manager' },
   { value: 'EMPLOYEE', label: 'Employee' },
 ]
+
+const ALL_SECTIONS = [...ONBOARDING_SECTIONS, ...OFFBOARDING_SECTIONS]
+
+/** DOCUMENTS_ADMIN → "Documents & admin". */
+function sectionLabel(value: string): string {
+  return ALL_SECTIONS.find((o) => o.value === value)?.label ?? value
+}
+
+/** IT_ADMIN → "IT admin". */
+function ownerLabel(value: string): string {
+  return OWNER_OPTIONS.find((o) => o.value === value)?.label ?? value
+}
+
+/** Wireframe "Due" column: −5 → "−5 days" (before start), 0 → "Day 1", 4 → "Day 5". */
+function dueLabel(offsetDays: number): string {
+  if (offsetDays < 0) return `−${Math.abs(offsetDays)} day${offsetDays === -1 ? '' : 's'}`
+  return `Day ${offsetDays + 1}`
+}
 
 // ---------------------------------------------------------------------------
 // Add / Edit item modal
@@ -373,6 +393,7 @@ export function ChecklistTemplatesTab(): ReactElement {
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<ChecklistTemplateItemDto | null>(null)
   const [newTemplateOpen, setNewTemplateOpen] = useState(false)
+  const [itemSort, setItemSort] = useState<SortState>(UNSORTED)
 
   const { data: templates } = useQuery({
     queryKey: ['settings', 'checklist-templates', { includeArchived }],
@@ -432,16 +453,156 @@ export function ChecklistTemplatesTab(): ReactElement {
     }
   }
 
+  // Unsorted view lists items in section order (Documents → Equipment → Accounts → Orientation), as the wireframe does
+  const sectionOrdered = [...(detail?.items ?? [])].sort(
+    (a, b) => ALL_SECTIONS.findIndex((o) => o.value === a.section) - ALL_SECTIONS.findIndex((o) => o.value === b.section))
+  const sortedItems = sortRows(sectionOrdered, itemSort, (it, key) => {
+    switch (key) {
+      case 'section': return sectionLabel(it.section)
+      case 'owner': return ownerLabel(it.ownerRole)
+      case 'mandatory': return it.mandatory ? 0 : 1
+      case 'due': return it.dueOffsetDays
+      default: return it.name
+    }
+  })
+
   return (
     <div className="space-y-4">
-      {/* Header row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-semibold text-gray-900">
+      <section aria-labelledby="checklist-heading" className={CARD}>
+        {/* Header row: title left, actions right (R-UI-1) */}
+        <div className={CARD_TITLE_ROW}>
+          <h2 id="checklist-heading" className={CARD_TITLE}>
             Checklist templates
           </h2>
-          {/* Include archived toggle */}
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+          <div className="flex items-center gap-2">
+            {selectedTemplate !== null && selectedTemplate.archivedAt === null && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingItem(null)
+                  setAddItemOpen(true)
+                }}
+                className={ADD_BTN}
+              >
+                + Add item
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setNewTemplateOpen(true)}
+              className={SECONDARY_BTN}
+            >
+              + New template
+            </button>
+          </div>
+        </div>
+
+        {/* Template tabs (wireframe .tabs inside the card) */}
+        {templateList.length > 0 && (
+          <div
+            role="tablist"
+            aria-label="Checklist templates"
+            className="flex flex-wrap gap-1 border-b-2 border-gray-200 mb-5"
+          >
+            {templateList.map((tmpl) => (
+              <button
+                key={tmpl.id}
+                type="button"
+                role="tab"
+                aria-selected={tmpl.id === activeId}
+                onClick={() => setSelectedTemplateId(tmpl.id)}
+                className={`${tabClass(tmpl.id === activeId)} ${tmpl.archivedAt !== null ? 'opacity-60' : ''}`}
+              >
+                {tmpl.name}
+                {tmpl.archivedAt !== null && ' (archived)'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {templateList.length === 0 && (
+          <p className="text-sm text-gray-500 mb-4">
+            No templates yet. Create one with "+ New template".
+          </p>
+        )}
+
+        {/* Items table for selected template */}
+        {activeId !== null && detail !== null && detail !== undefined && (
+          <div className="wf-table-wrap">
+            <table className="wf-table">
+              <thead>
+                <tr>
+                  <SortHeader label="Item" sortKey="name" sort={itemSort} onSort={setItemSort} />
+                  <SortHeader label="Section" sortKey="section" sort={itemSort} onSort={setItemSort} />
+                  <SortHeader label="Owner" sortKey="owner" sort={itemSort} onSort={setItemSort} />
+                  <SortHeader label="Mandatory" sortKey="mandatory" sort={itemSort} onSort={setItemSort} center />
+                  <SortHeader label="Due" sortKey="due" sort={itemSort} onSort={setItemSort} />
+                  <th scope="col" className="text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedItems.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center text-gray-400">
+                      No items yet.
+                    </td>
+                  </tr>
+                )}
+                {sortedItems.map((item) => (
+                  <tr key={item.id}>
+                    <td className="font-semibold">{item.name}</td>
+                    <td>{sectionLabel(item.section)}</td>
+                    <td>{ownerLabel(item.ownerRole)}</td>
+                    <td className="text-center">
+                      {item.mandatory
+                        ? <><span aria-hidden="true">✓</span><span className="sr-only">Mandatory</span></>
+                        : <><span aria-hidden="true">—</span><span className="sr-only">Optional</span></>}
+                    </td>
+                    <td className="whitespace-nowrap">{dueLabel(item.dueOffsetDays)}</td>
+                    <td className="text-center">
+                      {detail.archivedAt === null && (
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingItem(item)
+                              setAddItemOpen(true)
+                            }}
+                            aria-label={`Edit ${item.name}`}
+                            className={SECONDARY_BTN}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { void handleDeleteItem(item) }}
+                            aria-label={`Remove ${item.name}`}
+                            className={REMOVE_BTN}
+                          >
+                            <CloseIcon />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Archive (orange outline, left — R-UI-1) and archived filter, below the table */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+          {selectedTemplate !== null && selectedTemplate.archivedAt === null ? (
+            <button
+              type="button"
+              onClick={() => { void handleArchive() }}
+              className="inline-flex items-center h-8 px-3 text-[11px] font-semibold uppercase tracking-[0.4px] rounded-md border-[1.5px] border-orange-500 text-orange-600 bg-white hover:bg-orange-50 focus-visible:ring-2 focus-visible:ring-orange-500"
+            >
+              Archive template
+            </button>
+          ) : <span />}
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
             <input
               type="checkbox"
               checked={includeArchived}
@@ -451,139 +612,7 @@ export function ChecklistTemplatesTab(): ReactElement {
             Show archived
           </label>
         </div>
-        <div className="flex gap-2">
-          {/* + Add item — top right of the section (R-UI-1) */}
-          {selectedTemplate !== null && selectedTemplate.archivedAt === null && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingItem(null)
-                setAddItemOpen(true)
-              }}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500"
-            >
-              + Add item
-            </button>
-          )}
-          {/* + New template — top right (R-UI-1) */}
-          <button
-            type="button"
-            onClick={() => setNewTemplateOpen(true)}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            + New template
-          </button>
-        </div>
-      </div>
-
-      {/* Template tab pills */}
-      {templateList.length > 0 && (
-        <div role="tablist" aria-label="Checklist templates" className="flex flex-wrap gap-2">
-          {templateList.map((tmpl) => (
-            <button
-              key={tmpl.id}
-              type="button"
-              role="tab"
-              aria-selected={tmpl.id === activeId}
-              onClick={() => setSelectedTemplateId(tmpl.id)}
-              className={[
-                'px-3 py-1.5 text-sm rounded-full border min-h-[44px] focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors',
-                tmpl.id === activeId
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-100',
-                tmpl.archivedAt !== null ? 'opacity-60' : '',
-              ].join(' ')}
-            >
-              {tmpl.name}
-              {tmpl.archivedAt !== null && ' (archived)'}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {templateList.length === 0 && (
-        <p className="text-sm text-gray-500">
-          No templates yet. Create one with "+ New template".
-        </p>
-      )}
-
-      {/* Archive button for selected template — orange outline, left (R-UI-1) */}
-      {selectedTemplate !== null && selectedTemplate.archivedAt === null && (
-        <div>
-          <button
-            type="button"
-            onClick={() => { void handleArchive() }}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-orange-500 text-orange-600 hover:bg-orange-50 min-h-[44px] focus-visible:ring-2 focus-visible:ring-orange-500"
-          >
-            Archive template
-          </button>
-        </div>
-      )}
-
-      {/* Items table for selected template */}
-      {activeId !== null && detail !== null && detail !== undefined && (
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-sm text-left text-gray-700">
-            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-              <tr>
-                <th scope="col" className="px-4 py-3">Item</th>
-                <th scope="col" className="px-4 py-3">Section</th>
-                <th scope="col" className="px-4 py-3">Owner</th>
-                <th scope="col" className="px-4 py-3">Mandatory</th>
-                <th scope="col" className="px-4 py-3">Due (days)</th>
-                <th scope="col" className="px-4 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {detail.items.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
-                    No items yet.
-                  </td>
-                </tr>
-              )}
-              {detail.items.map((item) => (
-                <tr
-                  key={item.id}
-                  className="bg-white hover:bg-gray-50"
-                >
-                  <td className="px-4 py-3">{item.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{item.section}</td>
-                  <td className="px-4 py-3 text-gray-500">{item.ownerRole}</td>
-                  <td className="px-4 py-3">{item.mandatory ? '✔' : '—'}</td>
-                  <td className="px-4 py-3">{item.dueOffsetDays}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      {detail.archivedAt === null && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingItem(item)
-                              setAddItemOpen(true)
-                            }}
-                            className="text-sm text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1 min-h-[44px]"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { void handleDeleteItem(item) }}
-                            aria-label={`Remove ${item.name}`}
-                            className="flex items-center justify-center min-h-[44px] min-w-[44px] text-gray-400 hover:text-red-600 focus-visible:ring-2 focus-visible:ring-red-500 rounded"
-                          >
-                            <span aria-hidden="true">×</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      </section>
 
       {/* Modals */}
       {activeId !== null && detail !== null && detail !== undefined && (

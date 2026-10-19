@@ -82,6 +82,7 @@ public class OnboardingService {
     private final ObjectMapper objectMapper;
     private final com.cubeworks.hr.security.SelfActionGuard selfActionGuard;
     private final TaskNotificationService taskNotificationService;
+    private final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient;
 
     /**
      * Constructor injection (R-CODE-1) — all dependencies explicit.
@@ -106,7 +107,8 @@ public class OnboardingService {
                               final Clock clock,
                               final ObjectMapper objectMapper,
                               final com.cubeworks.hr.security.SelfActionGuard selfActionGuard,
-                              final TaskNotificationService taskNotificationService) {
+                              final TaskNotificationService taskNotificationService,
+                              final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient) {
         this.employeeRepository = employeeRepository;
         this.contractRepository = contractRepository;
         this.departmentRepository = departmentRepository;
@@ -128,6 +130,7 @@ public class OnboardingService {
         this.objectMapper = objectMapper;
         this.selfActionGuard = selfActionGuard;
         this.taskNotificationService = taskNotificationService;
+        this.keycloakAdminClient = keycloakAdminClient;
     }
 
     // ── A06 Template preview ──────────────────────────────────────────────────
@@ -417,10 +420,24 @@ public class OnboardingService {
         emailOutboxService.enqueue("WELCOME_NEW_EMPLOYEE", req.privateEmail(),
                 welcomeSubject, welcomeBody, savedEmp);
 
-        final String pwdSubject = "Set your password — CubeWorks HR";
-        final String pwdBody = "Please set your password by clicking the link.";
-        emailOutboxService.enqueue("SET_PASSWORD", req.privateEmail(),
-                pwdSubject, pwdBody, savedEmp);
+        // Keycloak login account (F01 new-hire login, 2026-10-19). Create the user and store its
+        // id in idp_subject INSIDE this transaction, so the login account is atomic with the
+        // employee row (if the transaction rolls back, no orphan account is referenced). Keycloak
+        // itself e-mails the themed set-password link after commit (see the afterCommit block
+        // below), so the old placeholder SET_PASSWORD outbox row is no longer created here.
+        // Username and e-mail are both the private e-mail (decision 2026-10-19: work e-mail is not
+        // collected at creation).
+        final String kcUserId = keycloakAdminClient.createUserWithRole(
+                req.privateEmail(), req.privateEmail(), req.firstName(), req.lastName(),
+                savedEmp.getAppRole().name());
+        savedEmp.setIdpSubject(kcUserId);
+        savedEmp.setAccountStatus(AccountStatus.INVITED);
+        employeeRepository.save(savedEmp);
+
+        // Link lifespan from settings (R-ARC-7), converted to seconds for Keycloak.
+        final int setPasswordLinkDays = settingRepository.findById("SET_PASSWORD_LINK_DAYS")
+                .map(s -> s.getValueInt() != null ? s.getValueInt() : 7).orElse(7);
+        final int setPasswordLifespanSeconds = setPasswordLinkDays * 86400;
 
         // 11. Create the "Onboarding checklist" engine_task row inside this transaction.
         //
@@ -454,6 +471,15 @@ public class OnboardingService {
                 } catch (final Exception ex) {
                     log.error("Engine startCase failed for caseId={}; will retry on next poll",
                             caseId, ex);
+                }
+                // Keycloak sends the set-password link after commit, so nothing is e-mailed if the
+                // transaction rolled back. If this fails, the account still exists (idp_subject was
+                // saved above) and HR can resend the invite (A34).
+                try {
+                    keycloakAdminClient.sendSetPasswordEmail(kcUserId, setPasswordLifespanSeconds);
+                } catch (final Exception ex) {
+                    log.error("Keycloak set-password e-mail failed for employee {}; HR can resend",
+                            savedEmp.getId(), ex);
                 }
             }
         });
@@ -705,8 +731,9 @@ public class OnboardingService {
             @Override
             public void afterCommit() {
                 try {
+                    // itReadyBy drives the engine due date of "Equipment request"/"Remaining setup".
                     caseEngineClient.updateCaseFile(caseId, "Onboarding",
-                            Map.of("itRequestSent", true));
+                            Map.of("itRequestSent", true, "itReadyBy", readyBy.toString()));
                     // The model's own entry criterion for "Equipment request" never reliably
                     // fires from this case-file update alone (see CaseEngineClient.startPlanItem's
                     // Javadoc) — drive the plan item directly instead.

@@ -352,7 +352,7 @@ function SectionEditor({ formId, section, isArchived, onChanged }: SectionEditor
               type="button"
               onClick={() => { void handleSaveSection() }}
               disabled={savingSection}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
+              className="inline-flex items-center h-8 px-3 text-[11px] font-semibold uppercase tracking-[0.4px] rounded-md bg-green-600 hover:bg-green-700 text-white shadow-sm focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
             >
               {savingSection ? 'Saving…' : 'Save section'}
             </button>
@@ -481,7 +481,7 @@ function SectionEditor({ formId, section, isArchived, onChanged }: SectionEditor
                   type="button"
                   onClick={() => { void handleAddQuestion() }}
                   disabled={savingQuestion}
-                  className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
+                  className="inline-flex items-center h-8 px-3 text-[11px] font-semibold uppercase tracking-[0.4px] rounded-md bg-green-600 hover:bg-green-700 text-white shadow-sm focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
                 >
                   {savingQuestion ? 'Adding…' : 'Add question'}
                 </button>
@@ -824,7 +824,7 @@ function EditFormPanel({ formId }: EditFormPanelProps): ReactElement {
                   <button
                     type="button"
                     onClick={() => { void handleAddSection() }}
-                    className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500"
+                    className="inline-flex items-center h-8 px-3 text-[11px] font-semibold uppercase tracking-[0.4px] rounded-md bg-green-600 hover:bg-green-700 text-white shadow-sm focus-visible:ring-2 focus-visible:ring-green-500"
                   >
                     Add section
                   </button>

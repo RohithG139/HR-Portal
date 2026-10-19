@@ -83,7 +83,7 @@ class FRD08SettingsRoleAccessTests extends AbstractApiTest {
     void createJobTitle_asEmployee_returns403() throws Exception {
         perform(withJson(post("/api/settings/job-titles"),
                 """
-                {"name":"Denied Title"}
+                {"name":"Denied Title","grade":"MEDIOR","departmentId":1}
                 """).with(asEmployee()))
                 .andExpect(status().isForbidden());
     }
@@ -93,7 +93,7 @@ class FRD08SettingsRoleAccessTests extends AbstractApiTest {
     void createJobTitle_asIT_returns403() throws Exception {
         perform(withJson(post("/api/settings/job-titles"),
                 """
-                {"name":"Denied Title"}
+                {"name":"Denied Title","grade":"MEDIOR","departmentId":1}
                 """).with(asIT()))
                 .andExpect(status().isForbidden());
     }

@@ -138,10 +138,10 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', to: '/', icon: DashboardIcon, roles: ['HR', 'MANAGER', 'EMPLOYEE', 'IT_ADMIN'] },
   // All roles: My Tasks
   { label: 'My Tasks', to: '/my-tasks', icon: TasksIcon, roles: ['HR', 'MANAGER', 'EMPLOYEE', 'IT_ADMIN'] },
-  // HR: employee list, settings, reports
+  // HR: employee list, reports, settings (wireframe order: Reports above Settings)
   { label: 'Employees', to: '/employees', icon: EmployeesIcon, roles: ['HR', 'IT_ADMIN'] },
-  { label: 'Settings', to: '/settings', icon: SettingsIcon, roles: ['HR'] },
   { label: 'Reports', to: '/reports', icon: ReportsIcon, roles: ['HR'] },
+  { label: 'Settings', to: '/settings', icon: SettingsIcon, roles: ['HR'] },
   // Manager: My Team (W5, FRD-01 Wave 3)
   { label: 'My Team', to: '/team', icon: TeamIcon, roles: ['MANAGER'] },
   // Employee: own dashboard and profile

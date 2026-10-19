@@ -13,10 +13,22 @@ import java.math.BigDecimal;
  * @param appraisalCompletionRate percentage (0–100) of appraisals finalised in the current
  *                              open round; 0.0 when no round is open or no appraisals exist
  * @param unreturnedAssetCount  count of assets in RETURN_DUE or NOT_RETURNED status
+ * @param headcountChangeVsLastMonth joiners minus leavers over the last month (may be negative);
+ *                              caption "+2 vs last month" on the Headcount tile
+ * @param billableStaffCount    employees in the allocation pool ({@code v_employee_allocation});
+ *                              denominator for the Bench tile's "8% of billable staff" caption
+ * @param appraisalRoundYear    year of the open round's review period end; {@code null} when no
+ *                              round is open — caption "Round 2026" on the Appraisal tile
+ * @param unreturnedAssetExEmployeeCount distinct employees holding unreturned assets whose last
+ *                              working day has passed — caption "1 ex-employee" on the Assets tile
  */
 public record SummaryDto(
         long totalHeadcount,
         long benchCount,
         BigDecimal appraisalCompletionRate,
-        long unreturnedAssetCount) {
+        long unreturnedAssetCount,
+        long headcountChangeVsLastMonth,
+        long billableStaffCount,
+        Integer appraisalRoundYear,
+        long unreturnedAssetExEmployeeCount) {
 }

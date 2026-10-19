@@ -22,6 +22,9 @@ import {
   deleteJobTitle,
 } from '../../api/settingsDepartments'
 import type { DepartmentDto, JobTitleDto } from '../../api/settingsDepartments'
+import { getOnboardingLookups } from '../../api/lookups'
+import { CARD, CARD_TITLE_ROW, CARD_TITLE, ADD_BTN, REMOVE_BTN, CloseIcon, SortHeader, sortRows, UNSORTED } from './settingsUi'
+import type { SortState } from './settingsUi'
 import { Modal, Field, useToast } from '../../components/index'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
@@ -34,6 +37,18 @@ import type { ApiValidationError } from '../../api/types'
 function getFieldError(body: ApiValidationError, field: string): string | null {
   const match = body.errors.find((e) => e.field === field)
   return match?.message ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** SENIOR_II → "Senior II", MEDIOR → "Medior" (wireframe display). */
+export function gradeLabel(grade: string): string {
+  return grade
+    .split('_')
+    .map((part, i) => (i === 0 ? part.charAt(0) + part.slice(1).toLowerCase() : part))
+    .join(' ')
 }
 
 // ---------------------------------------------------------------------------
@@ -138,17 +153,27 @@ interface AddJobTitleModalProps {
   isOpen: boolean
   onClose: () => void
   onAdded: () => void
+  grades: string[]
+  departments: DepartmentDto[]
 }
 
-function AddJobTitleModal({ isOpen, onClose, onAdded }: AddJobTitleModalProps): ReactElement {
+function AddJobTitleModal({ isOpen, onClose, onAdded, grades, departments }: AddJobTitleModalProps): ReactElement {
   const { showToast } = useToast()
   const [name, setName] = useState('')
+  const [grade, setGrade] = useState('')
+  const [departmentId, setDepartmentId] = useState('')
   const [nameError, setNameError] = useState<string | null>(null)
+  const [gradeError, setGradeError] = useState<string | null>(null)
+  const [deptError, setDeptError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const reset = (): void => {
     setName('')
+    setGrade('')
+    setDepartmentId('')
     setNameError(null)
+    setGradeError(null)
+    setDeptError(null)
   }
 
   const handleClose = (): void => {
@@ -157,14 +182,17 @@ function AddJobTitleModal({ isOpen, onClose, onAdded }: AddJobTitleModalProps): 
   }
 
   const handleSubmit = async (): Promise<void> => {
-    setNameError(null)
-    if (name.trim() === '') {
-      setNameError('This field is required.')
-      return
-    }
+    const required = 'This field is required.'
+    const nErr = name.trim() === '' ? required : null
+    const gErr = grade === '' ? required : null
+    const dErr = departmentId === '' ? required : null
+    setNameError(nErr)
+    setGradeError(gErr)
+    setDeptError(dErr)
+    if (nErr !== null || gErr !== null || dErr !== null) return
     setSaving(true)
     try {
-      await createJobTitle(name.trim())
+      await createJobTitle(name.trim(), grade, Number(departmentId))
       showToast('Job title added.', 'success')
       reset()
       onAdded()
@@ -172,7 +200,10 @@ function AddJobTitleModal({ isOpen, onClose, onAdded }: AddJobTitleModalProps): 
     } catch (err: unknown) {
       if (err instanceof ApiResponseError) {
         if (err.body.code === 'VALIDATION_FAILED' && 'errors' in err.body) {
-          setNameError(getFieldError(err.body as ApiValidationError, 'name'))
+          const body = err.body as ApiValidationError
+          setNameError(getFieldError(body, 'name'))
+          setGradeError(getFieldError(body, 'grade'))
+          setDeptError(getFieldError(body, 'departmentId'))
         } else if (err.body.code === 'DUPLICATE_NAME') {
           setNameError('This name already exists.')
         } else {
@@ -218,6 +249,28 @@ function AddJobTitleModal({ isOpen, onClose, onAdded }: AddJobTitleModalProps): 
         error={nameError}
         placeholder="e.g. Senior Developer"
       />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+        <Field
+          id="job-title-grade"
+          label="Grade"
+          type="select"
+          value={grade}
+          onChange={(v) => setGrade(String(v))}
+          required
+          error={gradeError}
+          options={grades.map((g) => ({ value: g, label: gradeLabel(g) }))}
+        />
+        <Field
+          id="job-title-department"
+          label="Department"
+          type="select"
+          value={departmentId}
+          onChange={(v) => setDepartmentId(String(v))}
+          required
+          error={deptError}
+          options={departments.map((d) => ({ value: String(d.id), label: d.name }))}
+        />
+      </div>
     </Modal>
   )
 }
@@ -236,6 +289,8 @@ export function DepartmentsTab(): ReactElement {
 
   const [addDeptOpen, setAddDeptOpen] = useState(false)
   const [addJobOpen, setAddJobOpen] = useState(false)
+  const [deptSort, setDeptSort] = useState<SortState>(UNSORTED)
+  const [jobSort, setJobSort] = useState<SortState>(UNSORTED)
 
   const { data: departments, isLoading: deptsLoading } = useQuery({
     queryKey: ['settings', 'departments'],
@@ -245,6 +300,12 @@ export function DepartmentsTab(): ReactElement {
   const { data: jobTitles, isLoading: jobsLoading } = useQuery({
     queryKey: ['settings', 'job-titles'],
     queryFn: listJobTitles,
+  })
+
+  // Grade options for the Add job title pop-up (same fixed list as employee.grade)
+  const { data: lookups } = useQuery({
+    queryKey: ['onboarding-lookups'],
+    queryFn: getOnboardingLookups,
   })
 
   const handleDeleteDept = async (dept: DepartmentDto): Promise<void> => {
@@ -283,70 +344,71 @@ export function DepartmentsTab(): ReactElement {
     void queryClient.invalidateQueries({ queryKey: ['settings', 'job-titles'] })
   }
 
+  const sortedDepts = sortRows(departments ?? [], deptSort, (d, key) =>
+    key === 'people' ? d.employeeCount : d.name)
+  const sortedJobs = sortRows(jobTitles ?? [], jobSort, (j, key) =>
+    key === 'grade'
+      ? (lookups?.grades ?? []).indexOf(j.grade ?? '')
+      : key === 'department' ? (j.departmentName ?? '') : j.name)
+
   return (
     <div className="space-y-6">
-      {/* Two-column layout: stacked on mobile, side-by-side on md+ */}
-      <div className="flex flex-col md:flex-row gap-6">
+      {/* Two cards side by side on md+, stacked on mobile (wireframe grid-half) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
 
-        {/* Departments list */}
-        <section aria-labelledby="dept-heading" className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-3">
-            <h2
-              id="dept-heading"
-              className="text-base font-semibold text-gray-900"
-            >
+        {/* Departments card */}
+        <section aria-labelledby="dept-heading" className={CARD}>
+          <div className={CARD_TITLE_ROW}>
+            <h2 id="dept-heading" className={CARD_TITLE}>
               Departments
             </h2>
             {/* + Add department — top right of its section (R-UI-1) */}
             <button
               type="button"
               onClick={() => setAddDeptOpen(true)}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500"
+              className={ADD_BTN}
             >
               + Add department
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full text-sm text-left text-gray-700">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <div className="wf-table-wrap">
+            <table className="wf-table">
+              <thead>
                 <tr>
-                  <th scope="col" className="px-4 py-3">Department</th>
-                  <th scope="col" className="px-4 py-3">People</th>
-                  <th scope="col" className="px-4 py-3 w-12">Remove</th>
+                  <SortHeader label="Department" sortKey="name" sort={deptSort} onSort={setDeptSort} />
+                  <SortHeader label="People" sortKey="people" sort={deptSort} onSort={setDeptSort} center />
+                  <th scope="col" className="w-24 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody>
                 {deptsLoading && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                    <td colSpan={3} className="text-center text-gray-400">
                       Loading…
                     </td>
                   </tr>
                 )}
-                {!deptsLoading && (departments ?? []).length === 0 && (
+                {!deptsLoading && sortedDepts.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                    <td colSpan={3} className="text-center text-gray-400">
                       No departments yet.
                     </td>
                   </tr>
                 )}
-                {(departments ?? []).map((dept) => (
-                  <tr
-                    key={dept.id}
-                    className="bg-white hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-3 font-medium">{dept.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{dept.employeeCount}</td>
-                    <td className="px-4 py-3">
+                {sortedDepts.map((dept) => (
+                  <tr key={dept.id}>
+                    <td>{dept.name}</td>
+                    <td className="text-center tabular-nums">{dept.employeeCount}</td>
+                    <td className="text-center">
                       {/* Small × to remove list items (R-UI-1) */}
                       <button
                         type="button"
                         onClick={() => { void handleDeleteDept(dept) }}
                         aria-label={`Remove ${dept.name}`}
-                        className="flex items-center justify-center min-h-[44px] min-w-[44px] text-gray-400 hover:text-red-600 focus-visible:ring-2 focus-visible:ring-red-500 rounded"
+                        className={REMOVE_BTN}
                       >
-                        <span aria-hidden="true">×</span>
+                        <CloseIcon />
                       </button>
                     </td>
                   </tr>
@@ -356,62 +418,60 @@ export function DepartmentsTab(): ReactElement {
           </div>
         </section>
 
-        {/* Job titles list */}
-        <section aria-labelledby="job-heading" className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-3">
-            <h2
-              id="job-heading"
-              className="text-base font-semibold text-gray-900"
-            >
+        {/* Job titles card */}
+        <section aria-labelledby="job-heading" className={CARD}>
+          <div className={CARD_TITLE_ROW}>
+            <h2 id="job-heading" className={CARD_TITLE}>
               Job titles
             </h2>
             {/* + Add job title — top right of its section (R-UI-1) */}
             <button
               type="button"
               onClick={() => setAddJobOpen(true)}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500"
+              className={ADD_BTN}
             >
               + Add job title
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full text-sm text-left text-gray-700">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <div className="wf-table-wrap">
+            <table className="wf-table">
+              <thead>
                 <tr>
-                  <th scope="col" className="px-4 py-3">Job title</th>
-                  <th scope="col" className="px-4 py-3 w-12">Remove</th>
+                  <SortHeader label="Job title" sortKey="name" sort={jobSort} onSort={setJobSort} />
+                  <SortHeader label="Grade" sortKey="grade" sort={jobSort} onSort={setJobSort} />
+                  <SortHeader label="Department" sortKey="department" sort={jobSort} onSort={setJobSort} />
+                  <th scope="col" className="w-24 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody>
                 {jobsLoading && (
                   <tr>
-                    <td colSpan={2} className="px-4 py-6 text-center text-gray-400">
+                    <td colSpan={4} className="text-center text-gray-400">
                       Loading…
                     </td>
                   </tr>
                 )}
-                {!jobsLoading && (jobTitles ?? []).length === 0 && (
+                {!jobsLoading && sortedJobs.length === 0 && (
                   <tr>
-                    <td colSpan={2} className="px-4 py-6 text-center text-gray-400">
+                    <td colSpan={4} className="text-center text-gray-400">
                       No job titles yet.
                     </td>
                   </tr>
                 )}
-                {(jobTitles ?? []).map((jt) => (
-                  <tr
-                    key={jt.id}
-                    className="bg-white hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-3 font-medium">{jt.name}</td>
-                    <td className="px-4 py-3">
+                {sortedJobs.map((jt) => (
+                  <tr key={jt.id}>
+                    <td>{jt.name}</td>
+                    <td>{jt.grade !== null ? gradeLabel(jt.grade) : '—'}</td>
+                    <td>{jt.departmentName ?? '—'}</td>
+                    <td className="text-center">
                       <button
                         type="button"
                         onClick={() => { void handleDeleteJobTitle(jt) }}
                         aria-label={`Remove ${jt.name}`}
-                        className="flex items-center justify-center min-h-[44px] min-w-[44px] text-gray-400 hover:text-red-600 focus-visible:ring-2 focus-visible:ring-red-500 rounded"
+                        className={REMOVE_BTN}
                       >
-                        <span aria-hidden="true">×</span>
+                        <CloseIcon />
                       </button>
                     </td>
                   </tr>
@@ -432,6 +492,8 @@ export function DepartmentsTab(): ReactElement {
         isOpen={addJobOpen}
         onClose={() => setAddJobOpen(false)}
         onAdded={invalidateJobs}
+        grades={lookups?.grades ?? []}
+        departments={departments ?? []}
       />
     </div>
   )
