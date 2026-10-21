@@ -1,0 +1,31 @@
+<process xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne" name="ReleaseOnboardingEmails" implementationType="http://www.omg.org/spec/CMMN/ProcessType/Unspecified">
+    <documentation textFormat="text/plain">
+        <text><![CDATA[Added 2026-10-21 ("mail triggered by the case engine"). Calls hr-backend the moment this
+employee's case actually starts, so hr-backend's own EmailOutboxSenderJob/Keycloak admin client
+can release the two e-mails that were deliberately held back at employee-creation time
+("Welcome new employee" in hr-backend's email_outbox, and the Keycloak set-password e-mail) —
+see hr-backend's OnboardingService (where they are withheld) and
+OnboardingEmailReleaseService/EngineCallbackController (where this callback is received).
+
+Only ever carries employeeId (bound from the case-file Employee.employeeId, itself just the
+employee_code string) — R-ARC-3 forbids personal data in the case file, so hr-backend looks up
+the real name/e-mail itself from its own database using only this id.
+
+Authentication: a static shared-secret header, since this process task has no Keycloak identity
+of its own to present. Must match hr-backend's application.yml cubeworks.engine.callback-secret
+exactly — both are static values (this file has no env-var indirection), so if the secret ever
+changes, update both places together.]]></text>
+    </documentation>
+    <input id="employeeId__roe001" name="employeeId" typeRef="string"/>
+    <extensionElements mustUnderstand="false">
+        <cafienne:implementation class="org.cafienne.processtask.implementation.http.HTTPCallDefinition" async="true" xmlns:cafienne="org.cafienne">
+            <url xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL">http://hr-backend:8080/api/internal/engine-events/onboarding-started</url>
+            <method xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL">POST</method>
+            <post-content xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL">{"employeeId": "${employeeId}"}</post-content>
+            <http-headers xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL">
+                <http-header name="Content-Type">application/json</http-header>
+                <http-header name="X-Engine-Callback-Secret">dev-only-engine-callback-secret-f03a9c1e</http-header>
+            </http-headers>
+        </cafienne:implementation>
+    </extensionElements>
+</process>

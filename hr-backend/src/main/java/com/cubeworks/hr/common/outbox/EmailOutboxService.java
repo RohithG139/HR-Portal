@@ -63,6 +63,31 @@ public class EmailOutboxService {
                         final String subject,
                         final String body,
                         final Employee relatedEmployee) {
+        enqueue(templateCode, toAddress, subject, body, relatedEmployee, EmailOutboxStatus.PENDING);
+    }
+
+    /**
+     * Queues an e-mail with an explicit initial status, for callers that need the row withheld
+     * from {@link EmailOutboxSenderJob} until something else releases it.
+     *
+     * <p>Still written inside the same {@code @Transactional} method as the business event —
+     * {@link EmailOutboxStatus#HELD} changes only when the row becomes eligible for sending,
+     * not whether it's durably queued atomically with the domain change (R-ARC-6 unaffected).</p>
+     *
+     * @param templateCode  the {@code email_template.code} value that defines subject and body
+     * @param toAddress     the resolved recipient e-mail address
+     * @param subject       the rendered subject line (substituted with actual values)
+     * @param body          the rendered body text (substituted with actual values)
+     * @param relatedEmployee the employee this e-mail is about (for audit queries); may be null
+     * @param initialStatus {@link EmailOutboxStatus#PENDING} for normal immediate sending, or
+     *                      {@link EmailOutboxStatus#HELD} to withhold until explicitly released
+     */
+    public void enqueue(final String templateCode,
+                        final String toAddress,
+                        final String subject,
+                        final String body,
+                        final Employee relatedEmployee,
+                        final EmailOutboxStatus initialStatus) {
 
         final EmailTemplate template = emailTemplateRepository.findByCode(templateCode)
                 .orElseThrow(() -> new IllegalStateException(
@@ -74,7 +99,7 @@ public class EmailOutboxService {
         entry.setToAddress(toAddress);
         entry.setSubject(subject);
         entry.setBody(body);
-        entry.setStatus(EmailOutboxStatus.PENDING);
+        entry.setStatus(initialStatus);
         entry.setAttempts(0);
         entry.setEmployee(relatedEmployee);
         entry.setCreatedAt(now);

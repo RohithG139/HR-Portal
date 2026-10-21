@@ -300,13 +300,17 @@ Two real defects were found and fixed during this verification, neither visible 
 
 | Trigger | Template | To |
 |---|---|---|
-| `POST /api/onboardings` succeeds | Welcome new employee | the new employee's private e-mail |
+| Case engine confirms the employee's case has started (2026-10-21, "mail triggered by the case engine" — see below) | Welcome new employee | the new employee's private e-mail |
 | same | Set your password | same |
 | IT & equipment request sent | IT equipment request | IT admin |
 | Milestone "Employee onboarded" | Onboarding completed | Employee + Manager (D-21, decided) |
 | HR resends the invite (A34) | Set your password | the employee |
 | Any new `checklist_item` or `engine_task` is created (G-04, 2026-10-16) | Task assigned (`TASK_ASSIGNED`) | the task's owner role: HR (`checklist_item.ownerRole=HR` / "Onboarding checklist"), IT admin (`ownerRole=IT_ADMIN` / "Equipment request", "Remaining setup"), the employee themself (`ownerRole=EMPLOYEE`), or their manager (`ownerRole=MANAGER`) — resolved by `com.cubeworks.hr.notification.TaskNotificationService`, also raising one in-app `notification` row per recipient |
 | A `checklist_item`/`engine_task` is still open `OVERDUE_REMINDER_DAYS` after its due date (G-05, 2026-10-16) | Task overdue (`TASK_OVERDUE`) | same owner-role resolution as `TASK_ASSIGNED` above, via `com.cubeworks.hr.task.OverdueReminderScheduler`; fires at most once per task (`overdue_reminder_at`) |
+
+**"Mail triggered by the case engine" (2026-10-21, user-directed change — out of FRD scope, logged here per R-SRC-2):** "Welcome new employee" and "Set your password" are no longer sent directly from `POST /api/onboardings`. Both are written/withheld at that point (the "Welcome new employee" `email_outbox` row as `HELD`, not `PENDING`; the Keycloak set-password e-mail not triggered at all yet) so R-ARC-6's atomic-with-the-business-transaction guarantee is unaffected, but neither is actually released for sending until the case engine's own "Release onboarding emails" process task (`employeecase.case`, no entry criterion — active from case start) calls back into `EngineCallbackController` to confirm the employee's case genuinely exists. `OnboardingEmailReleaseService` does the actual release (idempotent — see its class doc); `OnboardingEmailReleaseScheduler` is the fallback if that callback is ever lost (HELD rows older than 10 minutes are released anyway, logged as a WARN). This was a deliberate architecture change, not a bug fix: the FRD's own trigger wording ("Employee record created") is unchanged and still accurate in spirit — the e-mails still go out because the employee record was created, just via the case genuinely starting as the confirming signal, rather than Spring assuming case-start will succeed.
+
+Deploying this also surfaced and fixed an unrelated, pre-existing staleness bug: the engine's actually-deployed `employeecase.xml` bundle had not been regenerated since 2026-10-16, missing the 2026-10-19 "Equipment request" `manualActivationRule` fix (confirmed live: IT could see "Equipment request" from case start regardless of whether HR had sent it) and the `Onboarding.itReadyBy` due-date wiring on "Equipment request"/"Remaining setup". The redeploy that added the new process task also brought the live model back in sync with `src/definitions/employeecase.case`.
 
 | Timer | Default | Guard |
 |---|---|---|

@@ -147,6 +147,16 @@ cubeworks:
     # now pins the service-account user ("serviceAccountClientId": "hr-backend") to this exact id,
     # so any future realm import recreates it with the same sub instead of a fresh random one.
     service-account-user-id: b9d462ff-4185-44be-83fa-7beae8250602
+    # Shared secret the engine's own ProcessTasks present when calling back into hr-backend
+    # (added 2026-10-21, EngineCallbackController / "mail triggered by the case engine"). The
+    # engine has no Keycloak identity to authenticate with here, so this is checked manually
+    # inside the controller instead of via the normal JWT filter chain (SecurityConfig permits
+    # this one path without a JWT). Must match, verbatim, the X-Engine-Callback-Secret header
+    # hardcoded in casefabric/getting-started/src/definitions/ReleaseOnboardingEmails.process —
+    # that file is static XML, so there is no env-var indirection on the engine side; if this
+    # value ever changes, update both places together. Dev-only value — override via
+    # CUBEWORKS_ENGINE_CALLBACK_SECRET in any real deployment.
+    callback-secret: dev-only-engine-callback-secret-f03a9c1e
   # Keycloak admin API for new-employee login provisioning (F01 new-hire login, 2026-10-19).
   # Host-mode defaults; the containerized hr-backend overrides admin-base-url and token-url to the
   # Docker service name via CUBEWORKS_KEYCLOAK_ADMIN_BASE_URL / CUBEWORKS_KEYCLOAK_TOKEN_URL.

@@ -7,6 +7,25 @@
         <documentation textFormat="text/plain">
             <text><![CDATA[autoComplete is deliberately false: this case represents the employee's whole lifecycle (hire to exit, like the legacy emp.case), so it must stay open after F01's onboarding tasks finish rather than closing the moment the one required-by-nothing-else task completes. Verified live (2026-10-15): with autoComplete=true and no requiredRule on "Equipment request", the case plan auto-completed as soon as "Onboarding checklist" finished, permanently stranding "Equipment request"/"Remaining setup" in state Available even after Onboarding.itRequestSent later became true. With autoComplete=false the case plan stays Active indefinitely, which is correct until a later feature (F08 offboarding) adds the real exitCriterion that should end the case.]]></text>
         </documentation>
+        <processTask id="pi_release_onboarding_emails" name="Release onboarding emails" isBlocking="true" processRef="ReleaseOnboardingEmails.process">
+            <documentation textFormat="text/plain">
+                <text><![CDATA[Added 2026-10-21 ("mail triggered by the case engine"). No entryCriterion: active from
+case start, same as "Onboarding checklist" below — the first thing this case does. Calls back
+into hr-backend (ReleaseOnboardingEmails.process) the moment the case genuinely exists, which is
+what releases "Welcome new employee" (held in hr-backend's own email_outbox) and triggers the
+Keycloak set-password e-mail. Both are deliberately withheld at employee-creation time rather
+than sent from there directly — see hr-backend's OnboardingService / OnboardingEmailReleaseService
+/ EngineCallbackController for the full reasoning (they can't fire before the case exists, and
+R-ARC-6's delivery guarantee still applies via OnboardingEmailReleaseScheduler's fallback if this
+callback is ever lost).]]></text>
+            </documentation>
+            <inputs id="in_release_onboarding_emails_Employee" name="Employee" bindingRef="Employee"/>
+            <parameterMapping id="pm_release_onboarding_emails_in_employeeId" sourceRef="in_release_onboarding_emails_Employee" targetRef="employeeId__roe001">
+                <transformation id="pm_release_onboarding_emails_in_employeeId_t">
+                    <body><![CDATA[Employee?.employeeId]]></body>
+                </transformation>
+            </parameterMapping>
+        </processTask>
         <humanTask id="pi_onboarding_checklist" name="Onboarding checklist" isBlocking="true" performerRef="cr_employeecase_HR">
             <documentation textFormat="text/plain">
                 <text><![CDATA[Owner: HR. Active from case start. Completed once all mandatory checklist items are done (ONB-05); output sets Onboarding.completed, which raises the "Employee onboarded" milestone.]]></text>

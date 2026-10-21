@@ -3,6 +3,9 @@
         <CMMNShape cmmnElementRef="cm_employeecase.case_employeecase_0">
             <Bounds x="20" y="10" width="620" height="340"/>
         </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_release_onboarding_emails">
+            <Bounds x="260" y="40" width="140" height="40"/>
+        </CMMNShape>
         <CMMNShape cmmnElementRef="pi_onboarding_checklist">
             <Bounds x="80" y="70" width="140" height="80"/>
         </CMMNShape>
