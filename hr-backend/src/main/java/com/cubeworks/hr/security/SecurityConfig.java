@@ -84,6 +84,12 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html").permitAll()
+                        // Engine-initiated callbacks (added 2026-10-21): the CaseFabric engine's own
+                        // ProcessTasks have no Keycloak identity to present a JWT with. Protected
+                        // instead by a shared-secret header checked inside EngineCallbackController
+                        // itself (R-API-2's spirit — server-side check — just not JWT-based, since
+                        // the caller isn't an hr-frontend user). Never reachable from hr-frontend.
+                        .requestMatchers("/api/internal/engine-events/**").permitAll()
                         // Every other endpoint requires a valid Keycloak-issued JWT
                         .anyRequest().authenticated())
                 // JWT resource server — Spring Security validates against the Keycloak JWKS.

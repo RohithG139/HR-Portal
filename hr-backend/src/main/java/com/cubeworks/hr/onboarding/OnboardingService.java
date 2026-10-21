@@ -8,6 +8,7 @@ import com.cubeworks.hr.common.audit.AuditLogService;
 import com.cubeworks.hr.common.error.ApiException;
 import com.cubeworks.hr.common.error.ErrorCodes;
 import com.cubeworks.hr.common.outbox.EmailOutboxService;
+import com.cubeworks.hr.common.outbox.EmailOutboxStatus;
 import com.cubeworks.hr.employee.*;
 import com.cubeworks.hr.engine.CaseEngineClient;
 import com.cubeworks.hr.notification.Notification;
@@ -415,16 +416,26 @@ public class OnboardingService {
                 "{\"employeeCode\":\"" + empCode + "\",\"stage\":\"ONBOARDING\"}");
 
         // 10. Email outbox: Welcome + Set your password (§10)
+        //
+        // Engine-triggered onboarding e-mails (2026-10-21): "Welcome new employee" is written
+        // HELD, not PENDING — still durably queued inside this same transaction (R-ARC-6's
+        // guarantee is unaffected), but withheld from EmailOutboxSenderJob until the case
+        // engine's own "Release onboarding emails" process task confirms the case has actually
+        // started (OnboardingEmailReleaseService, called from EngineCallbackController).
+        // OnboardingEmailReleaseScheduler is the fallback if that callback never arrives.
         final String welcomeSubject = "Welcome to CubeWorks, " + req.firstName() + "!";
         final String welcomeBody = "Dear " + req.firstName() + ", welcome to CubeWorks.";
         emailOutboxService.enqueue("WELCOME_NEW_EMPLOYEE", req.privateEmail(),
-                welcomeSubject, welcomeBody, savedEmp);
+                welcomeSubject, welcomeBody, savedEmp, EmailOutboxStatus.HELD);
 
         // Keycloak login account (F01 new-hire login, 2026-10-19). Create the user and store its
         // id in idp_subject INSIDE this transaction, so the login account is atomic with the
-        // employee row (if the transaction rolls back, no orphan account is referenced). Keycloak
-        // itself e-mails the themed set-password link after commit (see the afterCommit block
-        // below), so the old placeholder SET_PASSWORD outbox row is no longer created here.
+        // employee row (if the transaction rolls back, no orphan account is referenced).
+        //
+        // The actual "set your password" e-mail send is now ALSO released by the engine callback
+        // (2026-10-21), not fired from this method's afterCommit block — see
+        // OnboardingEmailReleaseService. idp_subject/AccountStatus.INVITED are still set eagerly
+        // here, atomically with the employee row; only the external Keycloak e-mail call moves.
         // Username and e-mail are both the private e-mail (decision 2026-10-19: work e-mail is not
         // collected at creation).
         final String kcUserId = keycloakAdminClient.createUserWithRole(
@@ -433,11 +444,6 @@ public class OnboardingService {
         savedEmp.setIdpSubject(kcUserId);
         savedEmp.setAccountStatus(AccountStatus.INVITED);
         employeeRepository.save(savedEmp);
-
-        // Link lifespan from settings (R-ARC-7), converted to seconds for Keycloak.
-        final int setPasswordLinkDays = settingRepository.findById("SET_PASSWORD_LINK_DAYS")
-                .map(s -> s.getValueInt() != null ? s.getValueInt() : 7).orElse(7);
-        final int setPasswordLifespanSeconds = setPasswordLinkDays * 86400;
 
         // 11. Create the "Onboarding checklist" engine_task row inside this transaction.
         //
@@ -472,15 +478,14 @@ public class OnboardingService {
                     log.error("Engine startCase failed for caseId={}; will retry on next poll",
                             caseId, ex);
                 }
-                // Keycloak sends the set-password link after commit, so nothing is e-mailed if the
-                // transaction rolled back. If this fails, the account still exists (idp_subject was
-                // saved above) and HR can resend the invite (A34).
-                try {
-                    keycloakAdminClient.sendSetPasswordEmail(kcUserId, setPasswordLifespanSeconds);
-                } catch (final Exception ex) {
-                    log.error("Keycloak set-password e-mail failed for employee {}; HR can resend",
-                            savedEmp.getId(), ex);
-                }
+                // "Welcome new employee" (HELD above) and the Keycloak set-password e-mail are no
+                // longer sent from here (2026-10-21): the case engine's own "Release onboarding
+                // emails" process task calls back once the case has genuinely started (see
+                // EngineCallbackController / OnboardingEmailReleaseService), with
+                // OnboardingEmailReleaseScheduler as the fallback if that callback never arrives.
+                // If startCase itself failed above, the callback never fires and the fallback
+                // scheduler's timeout is what eventually releases both — same "never silently
+                // lost" guarantee as before, just triggered by the engine instead of assumed here.
             }
         });
 
