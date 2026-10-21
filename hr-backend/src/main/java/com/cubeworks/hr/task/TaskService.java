@@ -4,6 +4,7 @@ import com.cubeworks.hr.common.error.ApiException;
 import com.cubeworks.hr.common.error.ErrorCodes;
 import com.cubeworks.hr.employee.AppRole;
 import com.cubeworks.hr.employee.Employee;
+import com.cubeworks.hr.employee.EmployeeRepository;
 import com.cubeworks.hr.onboarding.ChecklistItem;
 import com.cubeworks.hr.onboarding.ChecklistItemRepository;
 import com.cubeworks.hr.onboarding.ChecklistPhase;
@@ -16,7 +17,9 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Business logic for the My Tasks screen (A36, A37) and task count badge (bell area, R-UI-3).
@@ -48,6 +51,7 @@ public class TaskService {
 
     private final EngineTaskRepository engineTaskRepository;
     private final ChecklistItemRepository checklistItemRepository;
+    private final EmployeeRepository employeeRepository;
     private final Clock clock;
 
     /**
@@ -59,9 +63,11 @@ public class TaskService {
      */
     public TaskService(final EngineTaskRepository engineTaskRepository,
                        final ChecklistItemRepository checklistItemRepository,
+                       final EmployeeRepository employeeRepository,
                        final Clock clock) {
         this.engineTaskRepository = engineTaskRepository;
         this.checklistItemRepository = checklistItemRepository;
+        this.employeeRepository = employeeRepository;
         this.clock = clock;
     }
 
@@ -87,6 +93,8 @@ public class TaskService {
                                    final int page) {
         final List<TaskItemDto> items = new ArrayList<>();
         final LocalDate today = LocalDate.now(clock);
+        // created_by id -> display name; few distinct creators, so look each up once
+        final Map<Long, String> creatorNames = new HashMap<>();
 
         // -- Engine tasks: by role ------------------------------------------------
         // G-13: HR/IT never see their own onboarding's tasks in their own HR/IT queue —
@@ -97,19 +105,19 @@ public class TaskService {
             engineTaskRepository.findOpenByTaskName("Onboarding checklist").stream()
                     .filter(t -> t.getCompletedAt() == null)
                     .filter(t -> t.getEmployee() == null || !caller.getId().equals(t.getEmployee().getId()))
-                    .map(t -> toTaskItem(t, today))
+                    .map(t -> toTaskItem(t, today, creatorNames))
                     .forEach(items::add);
         } else if (caller.getAppRole() == AppRole.IT_ADMIN) {
             // IT admin sees open Equipment request and Remaining setup engine tasks
             engineTaskRepository.findOpenByTaskName("Equipment request").stream()
                     .filter(t -> t.getCompletedAt() == null)
                     .filter(t -> t.getEmployee() == null || !caller.getId().equals(t.getEmployee().getId()))
-                    .map(t -> toTaskItem(t, today))
+                    .map(t -> toTaskItem(t, today, creatorNames))
                     .forEach(items::add);
             engineTaskRepository.findOpenByTaskName("Remaining setup").stream()
                     .filter(t -> t.getCompletedAt() == null)
                     .filter(t -> t.getEmployee() == null || !caller.getId().equals(t.getEmployee().getId()))
-                    .map(t -> toTaskItem(t, today))
+                    .map(t -> toTaskItem(t, today, creatorNames))
                     .forEach(items::add);
         }
 
@@ -121,7 +129,7 @@ public class TaskService {
                     .findAllOpenByPhaseAndOwnerRole(ChecklistPhase.ONBOARDING, OwnerRole.IT_ADMIN)
                     .stream()
                     .filter(ci -> ci.getEmployee() == null || !caller.getId().equals(ci.getEmployee().getId()))
-                    .map(ci -> toTaskItem(ci, today))
+                    .map(ci -> toTaskItem(ci, today, creatorNames))
                     .forEach(items::add);
         } else if (caller.getAppRole() == AppRole.EMPLOYEE) {
             // Employee sees their own EMPLOYEE-owned open items
@@ -130,7 +138,7 @@ public class TaskService {
                             ChecklistPhase.ONBOARDING, OwnerRole.EMPLOYEE)
                     .stream()
                     .filter(ci -> ci.getStatus().name().equals("OPEN"))
-                    .map(ci -> toTaskItem(ci, today))
+                    .map(ci -> toTaskItem(ci, today, creatorNames))
                     .forEach(items::add);
         } else if (caller.getAppRole() == AppRole.MANAGER) {
             // Manager sees their own open MANAGER-owned orientation items across their direct
@@ -139,7 +147,7 @@ public class TaskService {
             checklistItemRepository
                     .findOpenManagerItemsForManager(ChecklistPhase.ONBOARDING, caller.getId())
                     .stream()
-                    .map(ci -> toTaskItem(ci, today))
+                    .map(ci -> toTaskItem(ci, today, creatorNames))
                     .forEach(items::add);
         }
 
@@ -234,14 +242,17 @@ public class TaskService {
      * @param today today's date for due-state calculation
      * @return the task item DTO
      */
-    private TaskItemDto toTaskItem(final EngineTask t, final LocalDate today) {
+    private TaskItemDto toTaskItem(final EngineTask t, final LocalDate today,
+                                   final Map<Long, String> creatorNames) {
         return new TaskItemDto(
                 t.getId(),
                 "ONBOARDING",
                 t.getTaskName(),
                 t.getEmployee() != null ? t.getEmployee().getId() : null,
                 t.getDueDate() != null ? t.getDueDate().toString() : null,
-                computeDueState(t.getDueDate(), today)
+                computeDueState(t.getDueDate(), today),
+                fullName(t.getEmployee()),
+                creatorName(t.getCreatedBy(), creatorNames)
         );
     }
 
@@ -252,15 +263,36 @@ public class TaskService {
      * @param today today's date for due-state calculation
      * @return the task item DTO
      */
-    private TaskItemDto toTaskItem(final ChecklistItem ci, final LocalDate today) {
+    private TaskItemDto toTaskItem(final ChecklistItem ci, final LocalDate today,
+                                   final Map<Long, String> creatorNames) {
         return new TaskItemDto(
                 ci.getId(),
                 "ONBOARDING",
                 ci.getName(),
                 ci.getEmployee() != null ? ci.getEmployee().getId() : null,
                 ci.getDueDate() != null ? ci.getDueDate().toString() : null,
-                computeDueState(ci.getDueDate(), today)
+                computeDueState(ci.getDueDate(), today),
+                fullName(ci.getEmployee()),
+                creatorName(ci.getCreatedBy(), creatorNames)
         );
+    }
+
+    /** "First Last", or null when there is no employee. */
+    private static String fullName(final Employee e) {
+        return e != null ? e.getFirstName() + " " + e.getLastName() : null;
+    }
+
+    /**
+     * Name of the employee who created a task, cached per request; null for system-created
+     * tasks (created_by is null for engine callbacks and template-instantiated items).
+     */
+    private String creatorName(final Long createdBy, final Map<Long, String> creatorNames) {
+        if (createdBy == null) {
+            return null;
+        }
+        return creatorNames.computeIfAbsent(createdBy, id -> employeeRepository.findById(id)
+                .map(TaskService::fullName)
+                .orElse(null));
     }
 
     /**
@@ -290,7 +322,10 @@ public class TaskService {
      * @param dueState   "OVERDUE", "DUE_SOON", or "UPCOMING" (R-UI-6)
      */
     public record TaskItemDto(Long taskId, String module, String title,
-                               Long employeeId, String dueDate, String dueState) {}
+                               Long employeeId, String dueDate, String dueState,
+                               // My Tasks "Employee" and "Raised by" columns; raisedBy is
+                               // null when the task was created by the system (no created_by)
+                               String employeeName, String raisedBy) {}
 
     /**
      * Paginated wrapper for the My Tasks list.

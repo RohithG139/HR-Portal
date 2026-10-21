@@ -87,6 +87,8 @@ export function Modal({ isOpen, title, onClose, children, footer, size = 'md' }:
         onKeyDown={handleKeyDown}
         className={[
           'relative z-10 w-full bg-white',
+          // Cap at viewport height so header/footer stay on screen; body scrolls
+          'flex flex-col max-h-[calc(100dvh-2rem)]',
           'border border-gray-200',
           'rounded-lg shadow-xl',
           'focus:outline-none',
@@ -94,7 +96,7 @@ export function Modal({ isOpen, title, onClose, children, footer, size = 'md' }:
         ].join(' ')}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 id={titleId} className="text-base font-semibold text-gray-900">
             {title}
           </h2>
@@ -114,13 +116,13 @@ export function Modal({ isOpen, title, onClose, children, footer, size = 'md' }:
         </div>
 
         {/* Body */}
-        <div className="px-6 py-4 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {children}
         </div>
 
         {/* Footer */}
         {footer !== undefined && (
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-between">
+          <div className="shrink-0 px-6 py-4 border-t border-gray-200 flex justify-between">
             {footer}
           </div>
         )}

@@ -106,13 +106,15 @@ export function Table<T>({
   }
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar: filters + search + export */}
-      <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between">
-        <div className="flex flex-wrap gap-2 items-center">
-          {filters}
-        </div>
-        <div className="flex items-center gap-2 ml-auto">
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      {/* Toolbar panel (wireframe): filters row, then search + export row, both left-aligned */}
+      <div className="bg-gray-50 border-b border-gray-200 p-4 space-y-3">
+        {filters !== undefined && (
+          <div className="flex flex-wrap gap-2 items-center">
+            {filters}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
           {/* Search box */}
           <label htmlFor="table-search" className="sr-only">
             {searchPlaceholder}
@@ -158,7 +160,7 @@ export function Table<T>({
       </div>
 
       {/* Table */}
-      <div className="wf-table-wrap">
+      <div className="wf-table-wrap rounded-none border-0 shadow-none">
         <table className="wf-table">
           <thead>
             <tr>

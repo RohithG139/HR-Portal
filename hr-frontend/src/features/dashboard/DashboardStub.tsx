@@ -15,8 +15,9 @@
  * Route: { index: true, element: <DashboardStub /> }
  */
 
+import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../app/auth/AuthContext'
 import { getDashboard } from '../../api/dashboard'
@@ -31,6 +32,21 @@ import { ManagerDashboard } from './ManagerDashboard'
 import { EmployeeDashboard } from './EmployeeDashboard'
 import { ItAdminDashboard } from './ItAdminDashboard'
 
+/** "Good morning" / "Good afternoon" / "Good evening" by local hour. */
+function greeting(now: Date): string {
+  const hour = now.getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
+/** e.g. "Monday 12 October 2026" (wireframe header date). */
+function longDate(now: Date): string {
+  const weekday = now.toLocaleDateString('en-GB', { weekday: 'long' })
+  const dayMonthYear = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  return `${weekday} ${dayMonthYear}`
+}
+
 /**
  * DashboardStub fetches the dashboard data and renders the role-appropriate component.
  *
@@ -40,6 +56,8 @@ import { ItAdminDashboard } from './ItAdminDashboard'
  */
 export function DashboardStub(): ReactElement {
   const { user } = useAuth()
+  // Read the clock once per mount (greeting + header date), not on every render
+  const [now] = useState(() => new Date())
   const isOnboardingEmployee = user?.appRole === 'EMPLOYEE' && user.stage === 'ONBOARDING'
 
   const { data, isLoading, isError } = useQuery({
@@ -59,7 +77,7 @@ export function DashboardStub(): ReactElement {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div>
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 rounded w-32" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -75,17 +93,42 @@ export function DashboardStub(): ReactElement {
 
   if (isError || data === undefined) {
     return (
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div>
         <p className="text-sm text-red-600">Dashboard could not be loaded. Please try again.</p>
       </div>
     )
   }
 
+  const firstName = user?.name.split(' ')[0] ?? ''
+
   return (
-    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
-        Dashboard
-      </h1>
+    <div className="space-y-6">
+      {/* Greeting header (wireframe #hr-dash) */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+            {greeting(now)}, {firstName}
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            {user?.appRole === 'IT_ADMIN' ? 'Provisioning & access' : longDate(now)}
+          </p>
+        </div>
+        {/* + New Employee — HR only; positive action, top right (R-UI-1) */}
+        {user?.appRole === 'HR' && (
+          <Link
+            to="/employees/new"
+            className="
+              inline-flex items-center px-4 py-2 rounded-md
+              bg-green-600 hover:bg-green-700 text-white
+              text-sm font-medium
+              min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500
+              transition-colors
+            "
+          >
+            + New Employee
+          </Link>
+        )}
+      </div>
 
       {/* Render the appropriate dashboard based on the authenticated user's role.
           The backend already dispatched the correct DTO shape; the frontend casts

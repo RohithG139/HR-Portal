@@ -8,17 +8,21 @@ import com.cubeworks.hr.dto.workspace.HrDashboardDto;
 import com.cubeworks.hr.dto.workspace.ItAdminDashboardDto;
 import com.cubeworks.hr.dto.workspace.ManagerDashboardDto;
 import com.cubeworks.hr.dto.workspace.TeamMemberDto;
+import com.cubeworks.hr.dto.workspace.UpcomingEventDto;
 import com.cubeworks.hr.employee.Employee;
 import com.cubeworks.hr.employee.EmployeeRepository;
 import com.cubeworks.hr.employee.EmployeeStage;
 import com.cubeworks.hr.task.EngineTaskRepository;
 import com.cubeworks.hr.task.TaskService;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Builds the role-specific dashboard response for {@code GET /api/dashboard} (W01, FRD-01 Wave 3).
@@ -46,6 +50,7 @@ public class DashboardService {
     // The previous pattern (parameter injection) was a code-smell workaround for a
     // non-existent circular dependency.
     private final TeamService teamService;
+    private final NamedParameterJdbcTemplate jdbc;
     private final Clock clock;
 
     /**
@@ -56,6 +61,7 @@ public class DashboardService {
      * @param engineTaskRepository for the IT admin's equipment and setup task counts (W04)
      * @param taskService          reuses A36's My Tasks query for every role's task list
      * @param teamService          provides the team list for the Manager dashboard card (W02)
+     * @param jdbc                 reads the HR "Upcoming" card from v_upcoming_dates and friends
      * @param clock                application-wide clock bean
      */
     public DashboardService(final EmployeeRepository employeeRepository,
@@ -63,12 +69,14 @@ public class DashboardService {
                              final EngineTaskRepository engineTaskRepository,
                              final TaskService taskService,
                              final TeamService teamService,
+                             final NamedParameterJdbcTemplate jdbc,
                              final Clock clock) {
         this.employeeRepository = employeeRepository;
         this.assetRepository = assetRepository;
         this.engineTaskRepository = engineTaskRepository;
         this.taskService = taskService;
         this.teamService = teamService;
+        this.jdbc = jdbc;
         this.clock = clock;
     }
 
@@ -109,7 +117,42 @@ public class DashboardService {
         final List<DashboardTaskDto> tasks = toTaskDtos(caller);
 
         return new HrDashboardDto(activeEmployees, activeEmployeesDelta,
-                onboardingCount, onboardingNames, tasks);
+                onboardingCount, onboardingNames, tasks, findUpcoming());
+    }
+
+    /** Max rows in the HR dashboard's "Upcoming" card (wireframe shows 5). */
+    private static final int UPCOMING_LIMIT = 5;
+
+    /**
+     * Next dated events for the HR "Upcoming" card, soonest first.
+     *
+     * <p>{@code v_upcoming_dates} already covers probation ends, contract ends and PIP final
+     * reviews (next 90 days, same source as the C44 report). The wireframe also lists first
+     * days of onboarding employees and last working days of approved exits, which the view
+     * does not cover, so those two are unioned in here over the same 90-day window.</p>
+     */
+    private List<UpcomingEventDto> findUpcoming() {
+        final String sql = "SELECT event_type, employee_id, employee_name, event_date FROM ("
+                + " SELECT vud.event_type, vud.employee_id, vud.employee_name, vud.event_date"
+                + "   FROM hr.v_upcoming_dates vud"
+                + " UNION ALL"
+                + " SELECT 'START', e.id, e.first_name || ' ' || e.last_name, c.start_date"
+                + "   FROM hr.contract c JOIN hr.employee e ON e.id = c.employee_id"
+                + "  WHERE c.is_current AND e.stage = 'ONBOARDING'"
+                + "    AND c.start_date BETWEEN current_date AND current_date + 90"
+                + " UNION ALL"
+                + " SELECT 'LAST_DAY', e.id, e.first_name || ' ' || e.last_name, x.last_working_day"
+                + "   FROM hr.employee_exit x JOIN hr.employee e ON e.id = x.employee_id"
+                + "  WHERE x.status IN ('APPROVED', 'IN_PROGRESS')"
+                + "    AND x.last_working_day BETWEEN current_date AND current_date + 90"
+                + ") ev ORDER BY event_date ASC, employee_name ASC LIMIT :limit";
+
+        return jdbc.query(sql, new MapSqlParameterSource("limit", UPCOMING_LIMIT),
+                (rs, rowNum) -> new UpcomingEventDto(
+                        rs.getString("event_type"),
+                        rs.getLong("employee_id"),
+                        rs.getString("employee_name"),
+                        rs.getDate("event_date").toLocalDate()));
     }
 
     /**
@@ -169,7 +212,51 @@ public class DashboardService {
         final long equipmentRequests = engineTaskRepository.countOpenByTaskName("Equipment request");
         final long openSetupItems = engineTaskRepository.countOpenByTaskName("Remaining setup");
         final List<DashboardTaskDto> tasks = toTaskDtos(caller);
-        return new ItAdminDashboardDto(equipmentRequests, openSetupItems, tasks);
+
+        // Card detail lines — small read-only lookups, one query each
+        final Map<String, Object> nextEquipment = firstRow(
+                "SELECT e.first_name || ' ' || e.last_name AS name, c.start_date AS d"
+                + " FROM hr.engine_task t JOIN hr.employee e ON e.id = t.employee_id"
+                + " LEFT JOIN hr.contract c ON c.employee_id = e.id AND c.is_current"
+                + " WHERE t.task_name = 'Equipment request' AND t.completed_at IS NULL"
+                + " ORDER BY t.due_date LIMIT 1");
+        final List<String> setupNames = jdbc.queryForList(
+                "SELECT e.first_name || ' ' || e.last_name"
+                + " FROM hr.engine_task t JOIN hr.employee e ON e.id = t.employee_id"
+                + " WHERE t.task_name = 'Remaining setup' AND t.completed_at IS NULL"
+                + " ORDER BY t.due_date LIMIT 2", Map.of(), String.class);
+        final long revokeCount = queryCount(
+                "SELECT count(*) FROM hr.employee_exit WHERE status IN ('APPROVED', 'IN_PROGRESS')");
+        final Map<String, Object> nextRevoke = firstRow(
+                "SELECT e.first_name || ' ' || e.last_name AS name, x.last_working_day AS d"
+                + " FROM hr.employee_exit x JOIN hr.employee e ON e.id = x.employee_id"
+                + " WHERE x.status IN ('APPROVED', 'IN_PROGRESS')"
+                + " ORDER BY x.last_working_day LIMIT 1");
+        final long notReturned = queryCount(
+                "SELECT count(*) FROM hr.v_unreturned_assets WHERE asset_status = 'NOT_RETURNED'");
+
+        return new ItAdminDashboardDto(equipmentRequests, openSetupItems, tasks,
+                (String) nextEquipment.get("name"), toLocalDate(nextEquipment.get("d")),
+                setupNames,
+                revokeCount,
+                (String) nextRevoke.get("name"), toLocalDate(nextRevoke.get("d")),
+                notReturned);
+    }
+
+    /** First row of a query as column -> value, or an empty map when there is none. */
+    private Map<String, Object> firstRow(final String sql) {
+        final List<Map<String, Object>> rows = jdbc.queryForList(sql, Map.of());
+        return rows.isEmpty() ? Map.of() : rows.get(0);
+    }
+
+    private long queryCount(final String sql) {
+        final Long n = jdbc.queryForObject(sql, Map.of(), Long.class);
+        return n != null ? n : 0L;
+    }
+
+    /** JDBC date column value -> LocalDate (null-safe). */
+    private static LocalDate toLocalDate(final Object value) {
+        return value instanceof java.sql.Date d ? d.toLocalDate() : null;
     }
 
     // ── Shared helper ─────────────────────────────────────────────────────────
@@ -188,7 +275,7 @@ public class DashboardService {
     private List<DashboardTaskDto> toTaskDtos(final Employee caller) {
         return taskService.getMyTasks(caller, null, null, 0).content().stream()
                 .map(t -> new DashboardTaskDto(t.taskId(), t.title(), t.employeeId(),
-                        t.dueDate(), t.dueState()))
+                        t.dueDate(), t.dueState(), t.employeeName()))
                 .toList();
     }
 }

@@ -166,7 +166,7 @@ export function Step2ItRequest({ employeeId, onContinue }: Step2Props): ReactEle
               error={errors.laptopModel}
             />
             <Field
-              id="readyBy" label="Ready by (dd-mm-yyyy)"
+              id="readyBy" label="Ready by (dd-mm-yyyy)" type="date"
               value={form.readyBy}
               onChange={(v) => setField('readyBy', String(v))}
               required={!alreadySent}

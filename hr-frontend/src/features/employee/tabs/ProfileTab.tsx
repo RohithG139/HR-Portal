@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getEmployeeProfile,
@@ -80,6 +81,7 @@ function profileToForm(p: EmployeeProfileDto): ProfileForm {
  */
 export function ProfileTab({ employeeId, canEdit }: ProfileTabProps): ReactElement {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { showToast } = useToast()
   const [form, setForm] = useState<ProfileForm | null>(null)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -103,6 +105,9 @@ export function ProfileTab({ employeeId, canEdit }: ProfileTabProps): ReactEleme
       showToast('Profile saved.')
       void queryClient.invalidateQueries({ queryKey: ['employee-profile', employeeId] })
       void queryClient.invalidateQueries({ queryKey: ['employee-overview', employeeId] })
+      void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      // Back to the list once the edit is saved (only HR can edit, and HR owns /employees)
+      void navigate('/employees')
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED') {

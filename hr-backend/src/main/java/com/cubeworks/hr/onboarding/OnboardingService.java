@@ -507,8 +507,11 @@ public class OnboardingService {
 
         final List<ChecklistItem> items = checklistItemRepository
                 .findByEmployeeIdAndPhase(employeeId, ChecklistPhase.ONBOARDING);
-        final long total = items.size();
-        final long done = items.stream().filter(i -> i.getStatus() == ChecklistItemStatus.DONE).count();
+        // Progress counts mandatory items only: optional items never block completion,
+        // and cancelled items are no longer part of the checklist
+        final long total = items.stream().filter(OnboardingService::countsForProgress).count();
+        final long done = items.stream().filter(OnboardingService::countsForProgress)
+                .filter(i -> i.getStatus() == ChecklistItemStatus.DONE).count();
         final long mandatoryOpen = items.stream()
                 .filter(i -> i.isMandatory() && i.getStatus() == ChecklistItemStatus.OPEN).count();
         final boolean canComplete = mandatoryOpen == 0;
@@ -527,7 +530,32 @@ public class OnboardingService {
                 onb.getItStatus().name(),
                 onb.getItSentAt() != null ? onb.getItSentAt().toString() : null,
                 (int) total, (int) done, canComplete,
-                onb.getVersion()
+                onb.getVersion(),
+                toDetails(emp, contract, onb)
+        );
+    }
+
+    /** Everything step 1 captured, so the form can be shown again after creation. */
+    private static OnboardingDetailsDto toDetails(final Employee emp, final Contract contract,
+                                                  final Onboarding onb) {
+        return new OnboardingDetailsDto(
+                emp.getFirstName(), emp.getLastName(),
+                emp.getPrivateEmail(), emp.getMobilePhone(),
+                emp.getDateOfBirth() != null ? emp.getDateOfBirth().toString() : null,
+                emp.getNationality(),
+                emp.getStreet(), emp.getPostcode(), emp.getCity(),
+                contract.getContractType() != null ? contract.getContractType().name() : null,
+                contract.getHoursPerWeek() != null ? contract.getHoursPerWeek().intValue() : null,
+                contract.getProbationMonths() != null ? contract.getProbationMonths().intValue() : null,
+                onb.isIdChecked(), onb.isContractSignedReceived(), onb.isRightToWorkVerified(),
+                emp.getJobTitle() != null ? emp.getJobTitle().getId() : null,
+                emp.getDepartment() != null ? emp.getDepartment().getId() : null,
+                emp.getManager() != null ? emp.getManager().getId() : null,
+                emp.getGrade() != null ? emp.getGrade().name() : null,
+                emp.getAppRole() != null ? emp.getAppRole().name() : null,
+                emp.getBuddy() != null ? emp.getBuddy().getId() : null,
+                onb.getTemplate() != null ? onb.getTemplate().getId() : null,
+                emp.getVersion()
         );
     }
 
@@ -798,8 +826,12 @@ public class OnboardingService {
             items = items.stream().filter(i -> i.getStatus() == status).collect(Collectors.toList());
         }
 
-        final long total = items.size();
-        final long done = items.stream().filter(i -> i.getStatus() == ChecklistItemStatus.DONE).count();
+        // Progress = mandatory items done / mandatory items (cancelled excluded). Optional
+        // items are shown and can be ticked, but never count towards progress or block
+        // completion (canComplete has always been mandatory-only).
+        final long total = items.stream().filter(OnboardingService::countsForProgress).count();
+        final long done = items.stream().filter(OnboardingService::countsForProgress)
+                .filter(i -> i.getStatus() == ChecklistItemStatus.DONE).count();
         final long mandatoryOpen = items.stream()
                 .filter(i -> i.isMandatory() && i.getStatus() == ChecklistItemStatus.OPEN).count();
 
@@ -816,10 +848,16 @@ public class OnboardingService {
 
         return new ChecklistDto(
                 (int) done + "/" + (int) total,
-                (int) ((total > 0) ? (done * 100 / total) : 0),
+                // Nothing mandatory left to do (or none at all) = 100%
+                (int) ((total > 0) ? (done * 100 / total) : 100),
                 sections,
                 mandatoryOpen == 0
         );
+    }
+
+    /** Whether an item counts towards checklist progress: mandatory and not cancelled. */
+    private static boolean countsForProgress(final ChecklistItem i) {
+        return i.isMandatory() && i.getStatus() != ChecklistItemStatus.CANCELLED;
     }
 
     // ── A16 Add checklist item ────────────────────────────────────────────────
@@ -1043,8 +1081,14 @@ public class OnboardingService {
         final Employee emp = findEmployeeOrThrow(employeeId);
         final Onboarding onb = findOnboardingOrThrow(employeeId);
         final List<Asset> assets = assetRepository.findIssuedToEmployee(employeeId);
+        // All IT items, ticked ones included, so a tick stays visible after the page reloads
+        // (open-only made a ticked item vanish); cancelled items are no longer on the list
         final List<ChecklistItem> accountItems = checklistItemRepository
-                .findOpenByOwnerRole(employeeId, ChecklistPhase.ONBOARDING, OwnerRole.IT_ADMIN);
+                .findByEmployeeIdAndPhaseAndOwnerRole(employeeId, ChecklistPhase.ONBOARDING,
+                        OwnerRole.IT_ADMIN)
+                .stream()
+                .filter(i -> i.getStatus() != ChecklistItemStatus.CANCELLED)
+                .toList();
 
         return new EquipmentRequestDto(
                 emp.getFirstName() + " " + emp.getLastName(),
@@ -1560,7 +1604,24 @@ public class OnboardingService {
                                        String probationEndDate,
                                        String status, String itStatus, String itSentAt,
                                        int totalItems, int doneItems, boolean canComplete,
-                                       Integer version) {}
+                                       Integer version,
+                                       OnboardingDetailsDto details) {}
+
+    /**
+     * Step-1 values of an onboarding (A11), for re-showing the Employee details form.
+     * {@code employeeVersion} is the optimistic-lock version A12 (update details) checks.
+     */
+    public record OnboardingDetailsDto(String firstName, String lastName,
+                                       String privateEmail, String mobilePhone,
+                                       String dateOfBirth, String nationality,
+                                       String street, String postcode, String city,
+                                       String contractType, Integer hoursPerWeek,
+                                       Integer probationMonths,
+                                       boolean idChecked, boolean contractSignedReceived,
+                                       boolean rightToWorkVerified,
+                                       Long jobTitleId, Long departmentId, Long managerId,
+                                       String grade, String appRole, Long buddyId,
+                                       Long templateId, Integer employeeVersion) {}
 
     /** IT request data for A13/A14. */
     public record ItRequestDto(String laptopModel, String keyboardLayout,

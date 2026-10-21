@@ -3,7 +3,7 @@
  * Every shared component is exported here so feature screens import from a single path.
  */
 
-export { Badge, stageVariant } from './Badge/Badge'
+export { Badge, stageLabel, stageVariant } from './Badge/Badge'
 export type { BadgeVariant } from './Badge/Badge'
 
 export { Card } from './Card/Card'

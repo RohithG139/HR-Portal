@@ -19,5 +19,7 @@ public record DashboardTaskDto(
         String title,
         Long employeeId,
         String dueDate,
-        String dueState
+        String dueState,
+        // "First Last" of the employee the task is about, for "Task · Name" rows; may be null
+        String employeeName
 ) {}

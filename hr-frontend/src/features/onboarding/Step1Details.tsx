@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react'
 import type { ReactElement } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  createOnboarding, createDraft, updateDraft,
+  createOnboarding, createDraft, updateDraft, updateOnboardingDetails,
   getOnboarding, getTemplatePreview,
 } from '../../api/onboarding'
 import { getOnboardingLookups } from '../../api/lookups'
@@ -157,16 +157,77 @@ export function Step1Details({
     enabled: form.templateId !== '',
   })
 
-  // Populate form when editing an existing employee
+  // Populate the form with everything saved for an existing employee, so going back to
+  // step 1 (or returning after logout / refresh) shows the details that were entered
   useEffect(() => {
     if (existing !== undefined) {
+      const d = existing.details
+      const str = (v: string | number | null | undefined): string => (v === null || v === undefined ? '' : String(v))
       setForm((f) => ({
         ...f,
+        ...(d !== undefined && {
+          firstName: d.firstName,
+          lastName: d.lastName,
+          privateEmail: d.privateEmail,
+          mobilePhone: d.mobilePhone,
+          dateOfBirth: d.dateOfBirth !== null ? formatDate(d.dateOfBirth) : '',
+          nationality: str(d.nationality),
+          street: d.street,
+          postcode: d.postcode,
+          city: d.city,
+          contractType: d.contractType ?? f.contractType,
+          hoursPerWeek: str(d.hoursPerWeek),
+          probationMonths: str(d.probationMonths),
+          idChecked: d.idChecked,
+          contractSignedReceived: d.contractSignedReceived,
+          rightToWorkVerified: d.rightToWorkVerified,
+          jobTitleId: str(d.jobTitleId),
+          departmentId: str(d.departmentId),
+          managerId: str(d.managerId),
+          grade: str(d.grade),
+          appRole: str(d.appRole),
+          buddyId: str(d.buddyId),
+          templateId: str(d.templateId),
+        }),
         startDate: existing.startDate !== '' ? formatDate(existing.startDate) : '',
         endDate: existing.endDate !== null ? formatDate(existing.endDate) : '',
       }))
     }
   }, [existing])
+
+  // After creation only some details can still change (A12: name, phone, address and the
+  // contract dates/hours/probation); the rest is shown read-only instead of looking editable
+  const locked = employeeId !== null
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      updateOnboardingDetails(employeeId!, {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        mobilePhone: form.mobilePhone,
+        street: form.street,
+        postcode: form.postcode,
+        city: form.city,
+        startDate: parseDate(form.startDate),
+        endDate: form.contractType === 'FIXED_TERM' && form.endDate ? parseDate(form.endDate) : undefined,
+        hoursPerWeek: parseInt(form.hoursPerWeek, 10),
+        probationMonths: parseInt(form.probationMonths, 10),
+        version: existing?.details?.employeeVersion ?? undefined,
+      }),
+    onSuccess: () => {
+      showToast('Details saved.')
+      void queryClient.invalidateQueries({ queryKey: ['onboarding-summary', employeeId] })
+      void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      onContinue()
+    },
+    onError: (err: unknown) => {
+      if (err instanceof ApiResponseError && err.body.code === 'STALE_VERSION') {
+        showToast('Data changed by someone else. Please reload.', 'error')
+      } else {
+        showToast('Failed to save details.', 'error')
+      }
+    },
+  })
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]): void => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -272,7 +333,7 @@ export function Step1Details({
     const errs = validate(form, false)
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     if (employeeId !== null) {
-      onContinue()
+      updateMutation.mutate()
     } else {
       createMutation.mutate()
     }
@@ -293,10 +354,10 @@ export function Step1Details({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field id="firstName" label="First name" value={form.firstName} onChange={(v) => setField('firstName', String(v))} required error={errors.firstName} />
           <Field id="lastName" label="Last name" value={form.lastName} onChange={(v) => setField('lastName', String(v))} required error={errors.lastName} />
-          <Field id="privateEmail" label="Private e-mail" type="email" value={form.privateEmail} onChange={(v) => setField('privateEmail', String(v))} required error={errors.privateEmail} />
+          <Field id="privateEmail" disabled={locked} label="Private e-mail" type="email" value={form.privateEmail} onChange={(v) => setField('privateEmail', String(v))} required error={errors.privateEmail} />
           <Field id="mobilePhone" label="Mobile phone" type="tel" value={form.mobilePhone} onChange={(v) => setField('mobilePhone', String(v))} required placeholder="+31 6 12345678" error={errors.mobilePhone} />
-          <Field id="dateOfBirth" label="Date of birth (dd-mm-yyyy)" type="text" value={form.dateOfBirth} onChange={(v) => setField('dateOfBirth', String(v))} required placeholder="dd-mm-yyyy" error={errors.dateOfBirth} />
-          <Field id="nationality" label="Nationality" value={form.nationality} onChange={(v) => setField('nationality', String(v))} />
+          <Field id="dateOfBirth" disabled={locked} label="Date of birth (dd-mm-yyyy)" type="date" value={form.dateOfBirth} onChange={(v) => setField('dateOfBirth', String(v))} required placeholder="dd-mm-yyyy" error={errors.dateOfBirth} />
+          <Field id="nationality" disabled={locked} label="Nationality" value={form.nationality} onChange={(v) => setField('nationality', String(v))} />
           <div className="sm:col-span-2">
             <Field id="street" label="Street + number" value={form.street} onChange={(v) => setField('street', String(v))} required error={errors.street} />
           </div>
@@ -309,7 +370,7 @@ export function Step1Details({
       <Card title="Contract">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field
-            id="contractType" label="Contract type" type="select"
+            id="contractType" disabled={locked} label="Contract type" type="select"
             value={form.contractType}
             onChange={(v) => setField('contractType', String(v))}
             required
@@ -319,9 +380,9 @@ export function Step1Details({
             ]}
             error={errors.contractType}
           />
-          <Field id="startDate" label="Start date (dd-mm-yyyy)" value={form.startDate} onChange={(v) => setField('startDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.startDate} />
+          <Field id="startDate" label="Start date (dd-mm-yyyy)" type="date" value={form.startDate} onChange={(v) => setField('startDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.startDate} />
           {form.contractType === 'FIXED_TERM' && (
-            <Field id="endDate" label="End date (dd-mm-yyyy)" value={form.endDate} onChange={(v) => setField('endDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.endDate} />
+            <Field id="endDate" label="End date (dd-mm-yyyy)" type="date" value={form.endDate} onChange={(v) => setField('endDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.endDate} />
           )}
           <Field id="hoursPerWeek" label="Hours per week" type="number" value={form.hoursPerWeek} onChange={(v) => setField('hoursPerWeek', String(v))} required min={1} max={40} error={errors.hoursPerWeek} />
           <Field
@@ -343,9 +404,9 @@ export function Step1Details({
       {/* Verification */}
       <Card title="Verification">
         <div className="space-y-3">
-          <Field id="idChecked" label="ID document checked in person" type="checkbox" value={form.idChecked} onChange={(v) => setField('idChecked', Boolean(v))} required />
-          <Field id="contractSignedReceived" label="Signed contract received" type="checkbox" value={form.contractSignedReceived} onChange={(v) => setField('contractSignedReceived', Boolean(v))} required />
-          <Field id="rightToWorkVerified" label="Right-to-work verified" type="checkbox" value={form.rightToWorkVerified} onChange={(v) => setField('rightToWorkVerified', Boolean(v))} />
+          <Field id="idChecked" disabled={locked} label="ID document checked in person" type="checkbox" value={form.idChecked} onChange={(v) => setField('idChecked', Boolean(v))} required />
+          <Field id="contractSignedReceived" disabled={locked} label="Signed contract received" type="checkbox" value={form.contractSignedReceived} onChange={(v) => setField('contractSignedReceived', Boolean(v))} required />
+          <Field id="rightToWorkVerified" disabled={locked} label="Right-to-work verified" type="checkbox" value={form.rightToWorkVerified} onChange={(v) => setField('rightToWorkVerified', Boolean(v))} />
           {errors.verification !== undefined && (
             <p role="alert" className="text-xs text-red-600">{errors.verification}</p>
           )}
@@ -356,13 +417,13 @@ export function Step1Details({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card title="Role & reporting">
           <div className="space-y-4">
-            <Field id="jobTitleId" label="Job title" type="select" value={form.jobTitleId} onChange={(v) => setField('jobTitleId', String(v))} required options={jobTitleOptions} error={errors.jobTitleId} />
-            <Field id="departmentId" label="Department" type="select" value={form.departmentId} onChange={(v) => setField('departmentId', String(v))} required options={deptOptions} error={errors.departmentId} />
-            <Field id="managerId" label="Manager" type="select" value={form.managerId} onChange={(v) => setField('managerId', String(v))} options={managerOptions} />
-            <Field id="grade" label="Grade" type="select" value={form.grade} onChange={(v) => setField('grade', String(v))} required options={gradeOptions} error={errors.grade} />
-            <Field id="appRole" label="Application role" type="select" value={form.appRole} onChange={(v) => setField('appRole', String(v))} required options={roleOptions} error={errors.appRole} />
-            <Field id="buddyId" label="Buddy" type="select" value={form.buddyId} onChange={(v) => setField('buddyId', String(v))} options={buddyOptions} />
-            <Field id="templateId" label="Onboarding template" type="select" value={form.templateId} onChange={(v) => setField('templateId', String(v))} required options={templateOptions} error={errors.templateId} />
+            <Field id="jobTitleId" disabled={locked} label="Job title" type="select" value={form.jobTitleId} onChange={(v) => setField('jobTitleId', String(v))} required options={jobTitleOptions} error={errors.jobTitleId} />
+            <Field id="departmentId" disabled={locked} label="Department" type="select" value={form.departmentId} onChange={(v) => setField('departmentId', String(v))} required options={deptOptions} error={errors.departmentId} />
+            <Field id="managerId" disabled={locked} label="Manager" type="select" value={form.managerId} onChange={(v) => setField('managerId', String(v))} options={managerOptions} />
+            <Field id="grade" disabled={locked} label="Grade" type="select" value={form.grade} onChange={(v) => setField('grade', String(v))} required options={gradeOptions} error={errors.grade} />
+            <Field id="appRole" disabled={locked} label="Application role" type="select" value={form.appRole} onChange={(v) => setField('appRole', String(v))} required options={roleOptions} error={errors.appRole} />
+            <Field id="buddyId" disabled={locked} label="Buddy" type="select" value={form.buddyId} onChange={(v) => setField('buddyId', String(v))} options={buddyOptions} />
+            <Field id="templateId" disabled={locked} label="Onboarding template" type="select" value={form.templateId} onChange={(v) => setField('templateId', String(v))} required options={templateOptions} error={errors.templateId} />
           </div>
         </Card>
 
@@ -413,10 +474,10 @@ export function Step1Details({
           <button
             type="button"
             onClick={handleSaveAndContinue}
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || updateMutation.isPending}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50"
           >
-            {createMutation.isPending ? 'Saving…' : 'Save & continue'}
+            {createMutation.isPending || updateMutation.isPending ? 'Saving…' : 'Save & continue'}
           </button>
         </div>
       </div>

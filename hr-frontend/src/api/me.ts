@@ -10,6 +10,7 @@ export interface MeDto {
   employeeId: number
   name: string
   initials: string
+  email: string
   appRole: string
   menu: string[]
 }

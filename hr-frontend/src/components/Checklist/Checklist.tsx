@@ -108,6 +108,9 @@ function ChecklistItemRow({
           {item.name}
           {item.mandatory && <span aria-label="mandatory" className="ml-1 text-red-500 text-xs">*</span>}
         </span>
+        {!item.mandatory && (
+          <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-[11px] font-medium">Optional</span>
+        )}
         <span className="ml-2 text-xs text-gray-400">{ownerLabels[item.ownerRole] ?? item.ownerRole}</span>
         {item.dueDate !== '' && item.dueDate !== null && (
           <span className={`ml-2 text-xs ${dueDateClass(item.dueDate)}`}>
@@ -143,7 +146,7 @@ export function Checklist({
       {/* Progress bar */}
       <div className="space-y-1">
         <div className="flex justify-between text-sm text-gray-600">
-          <span>{progress} items</span>
+          <span>{progress} mandatory items</span>
           <span>{progressPercent}%</span>
         </div>
         <div

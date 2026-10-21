@@ -21,6 +21,7 @@
  * <Field id="contractType" label="Contract type" type="select" value={form.contractType} onChange={...} options={[...]} />
  */
 
+import { useRef } from 'react'
 import type { ChangeEvent, ReactElement } from 'react'
 
 interface SelectOption {
@@ -55,6 +56,29 @@ const baseInput =
 
 const errorInput = 'border-red-500 focus-visible:ring-red-500'
 
+/** "dd-mm-yyyy" -> "yyyy-mm-dd" for the native picker; "" when not a full date yet. */
+function displayToIso(display: string): string {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(display)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
+}
+
+/** "yyyy-mm-dd" from the native picker -> "dd-mm-yyyy" (R-UI-5 display format). */
+function isoToDisplay(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
+}
+
+function CalendarIcon(): ReactElement {
+  return (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  )
+}
+
 /**
  * Floating-label form field that handles all input types used in the app.
  *
@@ -78,6 +102,8 @@ export function Field({
   rows = 3,
 }: FieldProps): ReactElement {
   const hasError = error !== undefined && error !== null && error !== ''
+  // Hidden native date input that only supplies the calendar popup for type="date"
+  const pickerRef = useRef<HTMLInputElement>(null)
 
   const labelEl = (
     <label
@@ -163,6 +189,61 @@ export function Field({
           className={inputClass}
           {...ariaProps}
         />
+        {errEl}
+      </div>
+    )
+  }
+
+  // type="date": typed dd-mm-yyyy text box (value format unchanged for every caller)
+  // plus a calendar button that opens the browser's date picker and writes back dd-mm-yyyy.
+  if (type === 'date') {
+    const openPicker = (): void => {
+      const picker = pickerRef.current
+      if (picker === null) return
+      if (typeof picker.showPicker === 'function') picker.showPicker()
+      else picker.click()
+    }
+    return (
+      <div>
+        {labelEl}
+        <div className="relative">
+          <input
+            id={id}
+            type="text"
+            inputMode="numeric"
+            value={String(value ?? '')}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange?.(e.target.value)}
+            disabled={disabled}
+            readOnly={readOnly}
+            required={required}
+            placeholder={placeholder ?? 'dd-mm-yyyy'}
+            className={`${inputClass} min-h-[44px] pr-11`}
+            {...ariaProps}
+          />
+          {!disabled && !readOnly && (
+            <button
+              type="button"
+              onClick={openPicker}
+              aria-label={`Pick ${label} from calendar`}
+              className="absolute inset-y-0 right-0 flex items-center justify-center w-11 text-gray-500 hover:text-blue-600 rounded-r-md focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <CalendarIcon />
+            </button>
+          )}
+          <input
+            ref={pickerRef}
+            type="date"
+            tabIndex={-1}
+            aria-hidden="true"
+            value={displayToIso(String(value ?? ''))}
+            min={min !== undefined ? String(min) : undefined}
+            max={max !== undefined ? String(max) : undefined}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange?.(isoToDisplay(e.target.value))}
+            // Spans the field's width at its bottom edge: the browser anchors the calendar
+            // popup to this element, so it opens directly under the field
+            className="absolute left-0 bottom-0 w-full h-0 p-0 border-0 opacity-0 pointer-events-none"
+          />
+        </div>
         {errEl}
       </div>
     )

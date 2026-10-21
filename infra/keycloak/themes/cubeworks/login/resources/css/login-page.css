@@ -1,0 +1,211 @@
+/*
+ * CubeWorks HR — stylesheet for the self-contained login.ftl (S13, wireframe `#login-view`).
+ * Only login.ftl links this file; other Keycloak pages keep keycloak.v2 + css/login.css.
+ * Colors match the wireframe: brand navy #1e3a5f, primary blue #2563eb, text #111827.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #f3f4f6;
+  color: #111827;
+  font-family: 'Plus Jakarta Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+}
+
+.cw-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.cw-card {
+  width: 100%;
+  max-width: 27rem;
+  padding: 2.25rem 2rem;
+  background: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 2px 20px rgba(15, 23, 42, 0.07);
+}
+
+.cw-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.cw-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.cw-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cw-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 0.375rem;
+  background: #1e3a5f;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.cw-brand-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  white-space: nowrap;
+}
+
+/* Short explanation under the title (forgot-password page) */
+.cw-intro {
+  margin: -0.5rem 0 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #4b5563;
+}
+
+/* Outlined field with the label sitting on the top border */
+.cw-field {
+  margin: 0 0 1rem;
+  padding: 0 0.75rem 0.6rem;
+  border: 1.5px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+.cw-field:focus-within {
+  border-color: #2563eb;
+}
+
+.cw-field legend {
+  padding: 0 0.35rem;
+  margin-left: -0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.cw-req {
+  margin-left: 0.2rem;
+  color: #dc2626;
+}
+
+.cw-field input {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0 0.3rem;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  color: #111827;
+}
+
+.cw-field-error {
+  border-color: #dc2626;
+}
+
+.cw-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.cw-link {
+  font-size: 0.8125rem;
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.cw-link:hover {
+  color: #1d4ed8;
+}
+
+.cw-button {
+  min-height: 2.25rem;
+  padding: 0 1.25rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: #2563eb;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.cw-button:hover {
+  background: #1d4ed8;
+}
+
+.cw-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.cw-link:focus-visible,
+.cw-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.cw-alert {
+  margin-bottom: 1.25rem;
+  padding: 0.6rem 0.875rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.cw-alert-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.cw-alert-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.cw-alert-success,
+.cw-alert-info {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+@media (max-width: 26rem) {
+  .cw-card {
+    padding: 2rem 1.25rem;
+  }
+
+  .cw-card-head {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+  }
+}

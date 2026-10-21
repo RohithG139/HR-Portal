@@ -9,9 +9,12 @@ import com.cubeworks.hr.employee.EmployeeStage;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,15 +56,25 @@ public class TeamService {
     private static final Set<String> TEAM_SORT_ALLOWLIST = Set.of(
             "lastName", "firstName", "employeeCode", "stage", "jobTitle.name");
 
+    /** Status values derived from project allocation rather than the stored stage. */
+    private static final Set<String> DERIVED_STATUSES = Set.of("ON_PROJECT", "BENCH", "PIP");
+
+    /** Upper bound when a derived-status filter has to load all direct reports first. */
+    private static final int MAX_TEAM_SCAN = 1_000;
+
     private final EmployeeRepository employeeRepository;
+    private final NamedParameterJdbcTemplate jdbc;
 
     /**
      * Constructor injection (R-CODE-1).
      *
      * @param employeeRepository for WS-02-scoped queries on the employee table
+     * @param jdbc               reads current projects/allocation from v_employee_allocation
      */
-    public TeamService(final EmployeeRepository employeeRepository) {
+    public TeamService(final EmployeeRepository employeeRepository,
+                       final NamedParameterJdbcTemplate jdbc) {
         this.employeeRepository = employeeRepository;
+        this.jdbc = jdbc;
     }
 
     /**
@@ -103,14 +116,22 @@ public class TeamService {
 
         final PageRequest pageable = PageRequest.of(page, size, Sort.by(sort));
 
-        // "On project", "Bench" and "PIP" status values cannot be applied until project_assignment
-        // and pip tables exist (F04/F07). Return an empty page rather than an error, so the
-        // frontend can display an "No results" state without a 400 response.
-        if ("On project".equalsIgnoreCase(status) || "Bench".equalsIgnoreCase(status)
-                || "PIP".equalsIgnoreCase(status)) {
-            // Deferred: project_assignment (F04) / pip (F07) tables do not exist yet.
-            // Accept the filter value but return empty until those features ship.
-            return new TeamPageDto(List.of(), 0, 0, page, size);
+        // "On project" / "Bench" / "PIP" depend on live project allocation, which is not an
+        // employee column: load every direct report matching q, derive each status, filter,
+        // then page in memory (a manager's team is small).
+        final String derived = normaliseStatus(status);
+        if (derived != null && DERIVED_STATUSES.contains(derived)) {
+            final List<Employee> all = employeeRepository.findFiltered(
+                    null, null, caller.getId(), q,
+                    PageRequest.of(0, MAX_TEAM_SCAN, Sort.by(sort))).getContent();
+            final List<TeamMemberDto> matching = toTeamMemberDtos(all).stream()
+                    .filter(m -> derived.equals(m.teamStatus()))
+                    .toList();
+            final int from = Math.min(page * size, matching.size());
+            final int to = Math.min(from + size, matching.size());
+            final int totalPages = (matching.size() + size - 1) / size;
+            return new TeamPageDto(matching.subList(from, to), matching.size(),
+                    totalPages, page, size);
         }
 
         // Map the status string to a stage filter: "Onboarding" → ONBOARDING; "All" or null → no stage filter
@@ -121,9 +142,7 @@ public class TeamService {
         final Page<Employee> empPage = employeeRepository.findFiltered(
                 stageFilter, null, caller.getId(), q, pageable);
 
-        final List<TeamMemberDto> items = empPage.getContent().stream()
-                .map(this::toTeamMemberDto)
-                .toList();
+        final List<TeamMemberDto> items = toTeamMemberDtos(empPage.getContent());
 
         return new TeamPageDto(items, empPage.getTotalElements(),
                 empPage.getTotalPages(), page, size);
@@ -140,30 +159,75 @@ public class TeamService {
      */
     @Transactional(readOnly = true)
     public List<TeamMemberDto> buildTeamList(final Employee caller) {
-        return employeeRepository.findByManagerId(caller.getId()).stream()
-                .map(this::toTeamMemberDto)
-                .toList();
+        return toTeamMemberDtos(employeeRepository.findByManagerId(caller.getId()));
     }
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
+    /** "On project" / "on_project" / "Bench" ... -> ON_PROJECT / BENCH ...; null for All. */
+    private static String normaliseStatus(final String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+        return status.trim().toUpperCase().replace(' ', '_');
+    }
+
     /**
-     * Maps an {@link Employee} to a {@link TeamMemberDto}.
+     * Maps employees to team rows, loading current projects and allocation for all of them
+     * in one query (N+1 prevention: one read of v_employee_allocation per page, not per row).
      *
-     * <p>Deferred fields (currentProjects, allocation, development) are absent from the record —
-     * F04/F05 will add them when their tables exist (additive DTO contract, D-W2).</p>
-     *
-     * @param e the employee entity (jobTitle must be loaded — use JOIN FETCH in the caller's query)
-     * @return the team member DTO
+     * @param employees the employees (jobTitle must be loaded — use JOIN FETCH in the query)
+     * @return team member DTOs in the same order
      */
-    private TeamMemberDto toTeamMemberDto(final Employee e) {
+    private List<TeamMemberDto> toTeamMemberDtos(final List<Employee> employees) {
+        final Map<Long, Allocation> allocations = loadAllocations(
+                employees.stream().map(Employee::getId).toList());
+        return employees.stream()
+                .map(e -> toTeamMemberDto(e, allocations.getOrDefault(e.getId(), Allocation.NONE)))
+                .toList();
+    }
+
+    /** Current projects and total allocation per employee id (absent = no current project). */
+    private Map<Long, Allocation> loadAllocations(final List<Long> ids) {
+        final Map<Long, Allocation> result = new HashMap<>();
+        if (ids.isEmpty()) {
+            return result;
+        }
+        jdbc.query("SELECT employee_id, projects, total_allocation_pct"
+                        + " FROM hr.v_employee_allocation WHERE employee_id IN (:ids)",
+                new MapSqlParameterSource("ids", ids),
+                rs -> {
+                    result.put(rs.getLong("employee_id"), new Allocation(
+                            rs.getString("projects"), rs.getInt("total_allocation_pct")));
+                });
+        return result;
+    }
+
+    private TeamMemberDto toTeamMemberDto(final Employee e, final Allocation allocation) {
         return new TeamMemberDto(
                 e.getId(),
                 e.getEmployeeCode(),
                 e.getFirstName(),
                 e.getLastName(),
                 e.getJobTitle() != null ? e.getJobTitle().getName() : null,
-                e.getStage() != null ? e.getStage().name() : null
+                e.getStage() != null ? e.getStage().name() : null,
+                allocation.projects(),
+                allocation.pct(),
+                teamStatus(e.getStage(), allocation.pct())
         );
+    }
+
+    /** My Team status: lifecycle stage wins, otherwise project allocation decides. */
+    private static String teamStatus(final EmployeeStage stage, final int allocationPct) {
+        if (stage == EmployeeStage.ONBOARDING || stage == EmployeeStage.PIP
+                || stage == EmployeeStage.OFFBOARDING) {
+            return stage.name();
+        }
+        return allocationPct > 0 ? "ON_PROJECT" : "BENCH";
+    }
+
+    /** Row from v_employee_allocation. */
+    private record Allocation(String projects, int pct) {
+        static final Allocation NONE = new Allocation(null, 0);
     }
 }

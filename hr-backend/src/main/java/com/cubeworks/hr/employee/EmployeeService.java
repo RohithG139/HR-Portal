@@ -158,6 +158,7 @@ public class EmployeeService {
                             null, null,
                             e.getStage() != null ? e.getStage().name() : null,
                             e.getEmployeeCode(), null, false,
+                            listEmail(e),
                             assetCounts.getOrDefault(e.getId(), 0)))
                     .collect(Collectors.toList());
 
@@ -182,7 +183,7 @@ public class EmployeeService {
             final List<EmployeeListItemDto> drafts = draftRepository.findAll().stream()
                     .map(d -> new EmployeeListItemDto(
                             null, d.getId(), d.getFirstName(), d.getLastName(),
-                            null, null, null, "DRAFT", null, null, true, null))
+                            null, null, null, "DRAFT", null, null, true, null, null))
                     .collect(Collectors.toList());
             items.addAll(drafts);
         }
@@ -473,8 +474,14 @@ public class EmployeeService {
                 e.getEmployeeCode(),
                 e.getAccountStatus() != null ? e.getAccountStatus().name() : null,
                 false,
+                listEmail(e),
                 null // assetCount: null for HR rows; populated only for IT admin (D-W9)
         );
+    }
+
+    /** Work e-mail once IT has created it, otherwise the private e-mail. */
+    private static String listEmail(final Employee e) {
+        return e.getWorkEmail() != null ? e.getWorkEmail() : e.getPrivateEmail();
     }
 
     private EmployeeOverviewDto toOverview(final Employee e) {
@@ -552,6 +559,9 @@ public class EmployeeService {
                                       String managerName, String stage,
                                       String employeeCode, String accountStatus,
                                       boolean draft,
+                                      // Shown under the name in the Employees list (work e-mail,
+                                      // else private e-mail); null for draft rows.
+                                      String email,
                                       // Fix #9: suppress null assetCount from HR responses (HR path
                                       // always passes null; only IT admin populates this field).
                                       @JsonInclude(JsonInclude.Include.NON_NULL) Integer assetCount) {}

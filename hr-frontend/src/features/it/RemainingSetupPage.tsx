@@ -3,7 +3,9 @@
  * @description S6 — Remaining setup screen (IT admin).
  * Shows the IT admin's remaining checklist items (accounts & installations).
  * "Mark done" (A24) completes the "Remaining setup" engine task via a 202 undo window.
- * Disabled until all mandatory items are ticked (spec §6).
+ * Disabled until all mandatory items are ticked (spec §6). Only shown when that task exists:
+ * the engine creates it only if the equipment request was completed with IT items still open,
+ * so for everyone else each tick is the whole job and there is nothing further to submit.
  * @props (none — reads employeeId from route params)
  * @example
  * Route: { path: '/it/setup/:employeeId', element: <RemainingSetupPage /> }
@@ -11,9 +13,10 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getChecklist, tickItem, untickItem, completeItSetup } from '../../api/onboarding'
+import { getMyTasks } from '../../api/tasks'
 import { ApiResponseError } from '../../api/types'
 import { Card, useToast } from '../../components/index'
 import { formatDate } from '../../lib/date'
@@ -29,6 +32,7 @@ export function RemainingSetupPage(): ReactElement {
   const { employeeId: rawId } = useParams<{ employeeId: string }>()
   const employeeId = parseInt(rawId ?? '0', 10)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { showToast } = useToast()
   const [tickingId, setTickingId] = useState<number | null>(null)
 
@@ -37,6 +41,14 @@ export function RemainingSetupPage(): ReactElement {
     queryKey: ['checklist-it', employeeId],
     queryFn: () => getChecklist(employeeId, { owner: 'IT_ADMIN' }),
   })
+
+  // Is there an open "Remaining setup" task for this employee? (same query as My Tasks)
+  const { data: myTasks } = useQuery({
+    queryKey: ['my-tasks'],
+    queryFn: () => getMyTasks(),
+  })
+  const hasSetupTask = (myTasks?.content ?? []).some(
+    (t) => t.title === 'Remaining setup' && t.employeeId === employeeId)
 
   const tickMutation = useMutation({
     mutationFn: (itemId: number) => {
@@ -73,11 +85,16 @@ export function RemainingSetupPage(): ReactElement {
     onSuccess: (result) => {
       showToast(`Setup marked done. Undo available until ${result.undoUntil}.`)
       void queryClient.invalidateQueries({ queryKey: ['checklist-it', employeeId] })
+      void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
+      // Task is finished: back to the task list (the toast is global, so it stays)
+      void navigate('/my-tasks')
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'MANDATORY_ITEMS_OPEN') {
         // Spec §6 message (R-SRC-3)
         showToast('Tick all mandatory items first.', 'error')
+      } else if (err instanceof ApiResponseError && err.body.code === 'NOT_FOUND') {
+        showToast('There is no open setup task for this employee.', 'error')
       } else {
         showToast('Failed to mark setup done.', 'error')
       }
@@ -108,7 +125,7 @@ export function RemainingSetupPage(): ReactElement {
 
       {/* Progress summary */}
       <p className="text-sm text-gray-500">
-        Progress: {checklist.progress} ({checklist.progressPercent}%)
+        Progress: {checklist.progress} mandatory items ({checklist.progressPercent}%)
       </p>
       <div className="w-full bg-gray-200 rounded-full h-2">
         <div
@@ -150,8 +167,10 @@ export function RemainingSetupPage(): ReactElement {
                       }`}
                     >
                       {item.name}
-                      {item.mandatory && (
+                      {item.mandatory ? (
                         <span aria-label="mandatory" className="ml-1 text-red-500">*</span>
+                      ) : (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-[11px] font-medium">Optional</span>
                       )}
                       {item.dueDate !== '' && item.dueDate !== null && (
                         <span className="ml-2 text-xs text-gray-400">
@@ -180,16 +199,28 @@ export function RemainingSetupPage(): ReactElement {
         >
           Cancel
         </button>
-        <button
-          type="button"
-          onClick={() => completeMutation.mutate()}
-          disabled={!canComplete || completeMutation.isPending}
-          aria-disabled={!canComplete}
-          title={!canComplete ? 'Tick all mandatory items first' : undefined}
-          className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {completeMutation.isPending ? 'Saving…' : 'Mark done'}
-        </button>
+        {hasSetupTask ? (
+          <button
+            type="button"
+            onClick={() => completeMutation.mutate()}
+            disabled={!canComplete || completeMutation.isPending}
+            aria-disabled={!canComplete}
+            title={!canComplete ? 'Tick all mandatory items first' : undefined}
+            className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {completeMutation.isPending ? 'Saving…' : 'Mark done'}
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-gray-500">Each tick is saved right away — nothing else to submit.</p>
+            <Link
+              to="/my-tasks"
+              className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] inline-flex items-center focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+            >
+              Done
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   )

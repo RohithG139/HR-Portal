@@ -31,6 +31,20 @@ body {
 }
 
 /*
+ * Dropdowns: one custom filled triangle (wireframe) for every <select>, set 14px in from the right edge
+ * (the native arrow sits flush against the border). Unlayered on purpose so it beats
+ * Tailwind utilities like px-3 — otherwise long option text would run under the arrow.
+ */
+select:not([multiple]) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b7280' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  background-size: 0.75rem 0.5rem;
+  padding-right: 2.5rem;
+}
+
+/*
  * Wireframe table style (CubeWorks_HR_interactive_wireframes_v6_1 `table`):
  * blue header row, white uppercase labels, light-blue zebra rows.
  * Opt in with className="wf-table" on the <table>.

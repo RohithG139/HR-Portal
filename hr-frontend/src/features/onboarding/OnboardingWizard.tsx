@@ -11,7 +11,7 @@
 
 import { Fragment, useState } from 'react'
 import type { ReactElement } from 'react'
-import { useParams, useSearchParams, useLocation, Link } from 'react-router-dom'
+import { useParams, useSearchParams, useLocation, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getOnboarding } from '../../api/onboarding'
 import { Step1Details } from './Step1Details'
@@ -39,6 +39,7 @@ const STEP_LABELS: [string, string, string] = [
 export function OnboardingWizard(): ReactElement {
   const { employeeId: rawId, draftId: rawDraftId } = useParams<{ employeeId?: string; draftId?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const location = useLocation()
   const employeeId = rawId !== undefined && rawId !== '' ? parseInt(rawId, 10) : null
 
@@ -74,16 +75,19 @@ export function OnboardingWizard(): ReactElement {
 
   const handleStep1Created = (newEmployeeId: number): void => {
     setCreatedEmployeeId(newEmployeeId)
-    goToStep(1)
+    // Move to the employee's own onboarding URL (replacing /employees/new), so a logout,
+    // refresh or Back keeps the employee and step 1 shows the saved details again
+    void navigate(`/employees/${newEmployeeId}/onboarding?step=1`, { replace: true })
   }
 
   const employeeName = summary?.employeeName ?? 'New employee'
 
-  // Green "done" pills: details saved (employee exists), IT request sent, every checklist item done
+  // Green "done" pills: details saved (employee exists), IT request sent, all mandatory
+  // checklist items done (optional items don't count — same rule as Complete onboarding)
   const stepDone: [boolean, boolean, boolean] = [
     effectiveEmployeeId !== null,
     summary?.itSentAt != null,
-    summary !== undefined && summary.totalItems > 0 && summary.doneItems === summary.totalItems,
+    summary !== undefined && summary.canComplete,
   ]
 
   return (

@@ -21,6 +21,8 @@ export interface DashboardTaskDto {
   dueDate: string | null
   /** "OVERDUE", "DUE_SOON" (within 3 days), or "UPCOMING" (R-UI-6) */
   dueState: string
+  /** Name of the employee the task is about, for "Task · Name" rows. */
+  employeeName?: string | null
 }
 
 /**
@@ -51,6 +53,18 @@ export interface HrDashboardDto {
   /** Up to 2 names of employees currently onboarding. */
   onboardingNames: string[]
   tasks: DashboardTaskDto[]
+  /** "Upcoming" card rows, soonest first (max 5). Optional: absent on older backends. */
+  upcoming?: UpcomingEventDto[]
+}
+
+/** One "Upcoming" event on the HR dashboard (UpcomingEventDto.java). */
+export interface UpcomingEventDto {
+  /** PROBATION | CONTRACT | PIP | START | LAST_DAY */
+  type: string
+  employeeId: number
+  employeeName: string
+  /** ISO date (YYYY-MM-DD) */
+  date: string
 }
 
 /**
@@ -93,6 +107,17 @@ export interface ItAdminDashboardDto {
   equipmentRequestsCount: number
   openSetupItemsCount: number
   tasks: DashboardTaskDto[]
+  /** Earliest-due open equipment request: employee name and contract start (ISO). */
+  nextEquipmentName?: string | null
+  nextEquipmentStartDate?: string | null
+  /** Up to 2 names with open "Remaining setup" tasks. */
+  setupItemNames?: string[]
+  /** Exits in progress whose access must be revoked; earliest one's name + last day (ISO). */
+  accessToRevokeCount?: number
+  nextRevokeName?: string | null
+  nextRevokeDate?: string | null
+  /** Assets not returned by ex-employees. */
+  notReturnedCount?: number
 }
 
 /**

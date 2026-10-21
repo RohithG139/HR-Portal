@@ -42,7 +42,8 @@ class FRD01DashboardTests extends AbstractApiTest {
                 .andExpect(jsonPath("$.activeEmployeesDelta").isNumber())
                 .andExpect(jsonPath("$.onboardingCount").isNumber())
                 .andExpect(jsonPath("$.onboardingNames").isArray())
-                .andExpect(jsonPath("$.tasks").isArray());
+                .andExpect(jsonPath("$.tasks").isArray())
+                .andExpect(jsonPath("$.upcoming").isArray());
     }
 
     // ── W01/MGR — Manager gets teamMembers, tasks, myTeam ───────────────────

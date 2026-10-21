@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getEquipmentRequest, tickItem, untickItem, completeEquipmentRequest } from '../../api/onboarding'
 import { unissueAsset } from '../../api/assets'
@@ -29,6 +29,7 @@ export function EquipmentRequestPage(): ReactElement {
   const { employeeId: rawId } = useParams<{ employeeId: string }>()
   const employeeId = parseInt(rawId ?? '0', 10)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { showToast } = useToast()
   const [addEquipOpen, setAddEquipOpen] = useState(false)
   const [tickingId, setTickingId] = useState<number | null>(null)
@@ -60,6 +61,9 @@ export function EquipmentRequestPage(): ReactElement {
     mutationFn: () => completeEquipmentRequest(employeeId),
     onSuccess: (result) => {
       showToast(`Setup marked done. Undo until ${result.undoUntil}.`)
+      void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
+      // Task is finished: back to the task list (the toast is global, so it stays)
+      void navigate('/my-tasks')
     },
     onError: () => showToast('Failed to mark setup done.', 'error'),
   })
@@ -158,7 +162,9 @@ export function EquipmentRequestPage(): ReactElement {
                   />
                   <label htmlFor={`acct-${item.id}`} className={`text-sm cursor-pointer ${isDone ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                     {item.name}
-                    {item.mandatory && <span aria-label="mandatory" className="ml-1 text-red-500">*</span>}
+                    {item.mandatory
+                      ? <span aria-label="mandatory" className="ml-1 text-red-500">*</span>
+                      : <span className="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-[11px] font-medium">Optional</span>}
                   </label>
                 </li>
               )

@@ -38,6 +38,9 @@ export function stageVariant(stage: string): BadgeVariant {
     case 'ACTIVE': return 'success'
     case 'ONBOARDING': return 'info'
     case 'OFFBOARDING': return 'warning'
+    case 'PIP': return 'danger'
+    case 'ON_PROJECT': return 'success'
+    case 'BENCH': return 'draft'
     case 'DRAFT': return 'draft'
     case 'SENT': return 'info'
     case 'COMPLETED': return 'success'
@@ -47,6 +50,26 @@ export function stageVariant(stage: string): BadgeVariant {
 }
 
 /** Inline status badge, no interactive behaviour. */
+/** Display labels for employee stages; anything else falls back to sentence case. */
+const STAGE_LABELS: Record<string, string> = {
+  ONBOARDING: 'Onboarding',
+  ACTIVE: 'Active',
+  PIP: 'PIP',
+  OFFBOARDING: 'Offboarding',
+  ARCHIVED: 'Archived',
+  DRAFT: 'Draft',
+  ON_PROJECT: 'On project',
+  BENCH: 'Bench',
+}
+
+/** Human-readable stage label, e.g. "ARCHIVED" → "Archived", "NOT_SENT" → "Not sent". */
+export function stageLabel(stage: string): string {
+  const known = STAGE_LABELS[stage.toUpperCase()]
+  if (known !== undefined) return known
+  const words = stage.replace(/_/g, ' ').toLowerCase()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 export function Badge({ label, variant = 'default', className = '' }: BadgeProps): ReactElement {
   return (
     <span

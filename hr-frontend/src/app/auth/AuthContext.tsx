@@ -34,6 +34,7 @@ interface MeDto {
   employeeId: number
   name: string
   initials: string
+  email?: string
   appRole: string
   stage: string
   menu: string[]
@@ -47,6 +48,8 @@ export interface AuthUser {
   name: string
   /** Two-letter initials shown in the top bar (R-UI-3). */
   initials: string
+  /** Email shown in the user menu header (from /api/me, else the Keycloak token). */
+  email?: string
   /** The single active application role for this session. */
   appRole: AppRole
   /**
@@ -149,13 +152,14 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement | nu
               employeeId: me.employeeId,
               name: me.name,
               initials: me.initials,
+              email: me.email ?? (keycloak.tokenParsed as { email?: string } | undefined)?.email,
               appRole: me.appRole as AppRole,
               stage: me.stage,
               menu: me.menu,
             })
           } catch {
             // /api/me failed — log out rather than proceeding with broken state
-            keycloak.logout().catch(() => undefined)
+            keycloak.logout({ redirectUri: `${window.location.origin}/` }).catch(() => undefined)
           }
         }
         setReady(true)
@@ -179,7 +183,7 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement | nu
         }
       }).catch(() => {
         // Refresh failed — session is dead, redirect to login
-        keycloak.logout().catch(() => undefined)
+        keycloak.logout({ redirectUri: `${window.location.origin}/` }).catch(() => undefined)
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -188,7 +192,7 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement | nu
   // is stable; re-running init would restart the OIDC flow incorrectly.
 
   const logout = (): void => {
-    keycloak.logout().catch(() => undefined)
+    keycloak.logout({ redirectUri: `${window.location.origin}/` }).catch(() => undefined)
   }
 
   // Do not render children until auth is resolved to prevent flicker and

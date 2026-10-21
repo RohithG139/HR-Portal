@@ -11,6 +11,7 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getChecklist, tickItem, untickItem, completeOnboarding,
@@ -31,6 +32,7 @@ interface Step3Props {
  */
 export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { showToast } = useToast()
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [tickingId, setTickingId] = useState<number | null>(null)
@@ -79,6 +81,8 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
       // completeMutation.isSuccess on the button below this stops a second click from firing
       // against the already-completing task and showing a false "Failed to complete" toast.
       void queryClient.invalidateQueries({ queryKey: ['checklist', employeeId] })
+      // New employee is done: back to the Employees list (the toast is global, so it stays)
+      void navigate('/employees')
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'MANDATORY_ITEMS_OPEN') {

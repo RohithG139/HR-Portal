@@ -19,11 +19,14 @@ import java.util.List;
  * @param onboardingCount      count of employees whose {@code stage = 'ONBOARDING'}
  * @param onboardingNames      up to 2 first+last names of employees currently onboarding
  * @param tasks                the HR user's open tasks (same shape as A36/S12 My Tasks)
+ * @param upcoming             next dated events (probation/contract ends, PIP reviews, start
+ *                             dates, last days), soonest first, at most 5
  */
 public record HrDashboardDto(
         long activeEmployees,
         long activeEmployeesDelta,
         long onboardingCount,
         List<String> onboardingNames,
-        List<DashboardTaskDto> tasks
+        List<DashboardTaskDto> tasks,
+        List<UpcomingEventDto> upcoming
 ) {}

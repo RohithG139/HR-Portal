@@ -58,6 +58,7 @@ export function TopBar(): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -124,6 +125,23 @@ export function TopBar(): ReactElement {
     }
   }, [notifOpen])
 
+  // Close the user menu on outside click or Escape
+  useEffect(() => {
+    if (!menuOpen) return undefined
+    const onPointerDown = (e: PointerEvent): void => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menuOpen])
+
   return (
     <header
       className="
@@ -170,8 +188,10 @@ export function TopBar(): ReactElement {
           aria-label={`Signed in as ${roleLabel}`}
           className="
             hidden sm:inline-block
-            text-xs font-medium uppercase tracking-wide
-            text-gray-500
+            px-3 py-1 rounded-full
+            bg-blue-50 border border-blue-100
+            text-xs font-bold uppercase tracking-wide
+            text-blue-700
           "
         >
           {roleLabel}
@@ -268,7 +288,7 @@ export function TopBar(): ReactElement {
         </div>
 
         {/* Initials button + dropdown */}
-        <div className="relative">
+        <div ref={menuRef} className="relative">
           <button
             type="button"
             aria-label="Open user menu"
@@ -281,9 +301,9 @@ export function TopBar(): ReactElement {
             className="
               flex items-center justify-center
               min-h-[44px] min-w-[44px] rounded-full
-              bg-blue-600
+              bg-blue-900
               text-white text-sm font-semibold
-              hover:bg-blue-700
+              hover:bg-blue-800
               focus-visible:ring-2 focus-visible:ring-blue-500
               transition-colors
             "
@@ -293,16 +313,26 @@ export function TopBar(): ReactElement {
 
           {/* Dropdown menu */}
           {menuOpen && (
+            <div
+              className="
+                absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] z-50
+                bg-white
+                border border-gray-200
+                rounded-xl shadow-lg
+                overflow-hidden
+              "
+            >
+            {/* Who is signed in */}
+            <div className="px-4 py-3 border-b border-gray-200">
+              <p className="text-sm font-semibold text-gray-900 truncate">{user?.name ?? 'Not signed in'}</p>
+              {user?.email !== undefined && user.email !== '' && (
+                <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              )}
+            </div>
             <ul
               role="menu"
               aria-label="User actions"
-              className="
-                absolute right-0 mt-2 w-48 z-50
-                bg-white
-                border border-gray-200
-                rounded-md shadow-lg
-                py-1
-              "
+              className="py-1"
             >
               <li role="none">
                 <button
@@ -343,6 +373,7 @@ export function TopBar(): ReactElement {
                 </button>
               </li>
             </ul>
+            </div>
           )}
         </div>
       </nav>

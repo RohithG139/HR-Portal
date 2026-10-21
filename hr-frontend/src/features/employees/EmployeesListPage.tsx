@@ -18,19 +18,12 @@ import type { ReactElement } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listEmployees, exportEmployees } from '../../api/employees'
+import { getOnboardingLookups } from '../../api/lookups'
 import type { EmployeeListItemDto } from '../../api/employees'
-import { Badge, stageVariant, Table, useToast } from '../../components/index'
+import { Badge, stageLabel, stageVariant, Table, useToast } from '../../components/index'
 import type { Column } from '../../components/index'
 import { ApiResponseError } from '../../api/types'
 import { useAuth } from '../../app/auth/AuthContext'
-
-/** Human-readable stage labels. */
-const stageLabel: Record<string, string> = {
-  ONBOARDING: 'Onboarding',
-  ACTIVE: 'Active',
-  OFFBOARDING: 'Offboarding',
-  DRAFT: 'Draft',
-}
 
 /**
  * EmployeesListPage fetches the employee list from the backend with React Query.
@@ -57,16 +50,32 @@ export function EmployeesListPage(): ReactElement {
   // stageFilter is a client-controlled query param for server-side stage filtering.
   // The search box is handled by the Table component's built-in client-side filter.
   const [stageFilter, setStageFilter] = useState('')
+  // Department / manager filters (HR only) — server-side, by id ('' = all)
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [managerFilter, setManagerFilter] = useState('')
+
+  const listParams = {
+    stage: stageFilter || undefined,
+    departmentId: departmentFilter !== '' ? Number(departmentFilter) : undefined,
+    managerId: managerFilter !== '' ? Number(managerFilter) : undefined,
+  }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['employees', { stage: stageFilter }],
-    queryFn: () => listEmployees({ stage: stageFilter || undefined }),
+    queryKey: ['employees', listParams],
+    queryFn: () => listEmployees(listParams),
+  })
+
+  // Options for the department/manager dropdowns (A02 is HR-only)
+  const { data: lookups } = useQuery({
+    queryKey: ['lookups', 'onboarding'],
+    queryFn: getOnboardingLookups,
+    enabled: isHR,
   })
 
   const rows: EmployeeListItemDto[] = data?.items ?? []
 
   const handleExport = (): void => {
-    exportEmployees({ stage: stageFilter || undefined })
+    exportEmployees(listParams)
       .catch((err: unknown) => {
         const msg = err instanceof ApiResponseError ? err.body.code : 'Export failed.'
         showToast(msg, 'error')
@@ -93,7 +102,7 @@ export function EmployeesListPage(): ReactElement {
       accessor: (r) => r.stage,
       render: (r) => (
         <Badge
-          label={stageLabel[r.stage] ?? r.stage}
+          label={stageLabel(r.stage)}
           variant={stageVariant(r.stage)}
         />
       ),
@@ -123,6 +132,20 @@ export function EmployeesListPage(): ReactElement {
       key: 'name',
       header: 'Employee',
       accessor: (r) => `${r.firstName} ${r.lastName}`,
+      render: (r) => (
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="flex items-center justify-center shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-xs font-bold"
+          >
+            {`${r.firstName.charAt(0)}${r.lastName.charAt(0)}`.toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-900">{r.firstName} {r.lastName}</p>
+            {r.email !== null && <p className="text-xs text-gray-500 truncate">{r.email}</p>}
+          </div>
+        </div>
+      ),
     },
     {
       key: 'jobTitle',
@@ -145,7 +168,7 @@ export function EmployeesListPage(): ReactElement {
       accessor: (r) => r.stage,
       render: (r) => (
         <Badge
-          label={stageLabel[r.stage] ?? r.stage}
+          label={stageLabel(r.stage)}
           variant={r.draft ? 'draft' : stageVariant(r.stage)}
         />
       ),
@@ -164,14 +187,14 @@ export function EmployeesListPage(): ReactElement {
             // logs (it's lost on a hard refresh, which is an acceptable
             // trade-off for a "continue where you left off" convenience link).
             state={{ firstName: r.firstName, lastName: r.lastName }}
-            className="text-sm text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            className={actionButtonClass}
           >
             Continue
           </Link>
         ) : (
           <Link
             to={`/employees/${r.id ?? ''}`}
-            className="text-sm text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            className={actionButtonClass}
           >
             View
           </Link>
@@ -181,38 +204,73 @@ export function EmployeesListPage(): ReactElement {
 
   const columns = isItAdmin ? itAdminColumns : hrColumns
 
-  // Stage filter shown for both HR and IT admin (IT admin can filter by status too).
+  // Stage filter shown for both HR and IT admin (IT admin can filter by status too);
+  // department and manager filters are HR only (their option lists come from A02).
   const filters = (
-    <div className="flex gap-2 flex-wrap">
-      <div>
-        <label htmlFor="stage-filter" className="sr-only">Filter by stage</label>
+    <div className="flex gap-4 flex-wrap items-center">
+      <div className="flex items-center gap-2">
+        <label htmlFor="stage-filter" className={filterLabelClass}>Stage</label>
         <select
           id="stage-filter"
           value={stageFilter}
           onChange={(e) => setStageFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px]"
+          className={filterSelectClass}
         >
-          <option value="">Stage [All]</option>
+          <option value="">All</option>
           <option value="ONBOARDING">Onboarding</option>
           <option value="ACTIVE">Active</option>
           <option value="OFFBOARDING">Offboarding</option>
         </select>
       </div>
+      {isHR && (
+        <>
+          <div className="flex items-center gap-2">
+            <label htmlFor="department-filter" className={filterLabelClass}>Department</label>
+            <select
+              id="department-filter"
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              className={filterSelectClass}
+            >
+              <option value="">All</option>
+              {(lookups?.departments ?? []).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="manager-filter" className={filterLabelClass}>Manager</label>
+            <select
+              id="manager-filter"
+              value={managerFilter}
+              onChange={(e) => setManagerFilter(e.target.value)}
+              className={filterSelectClass}
+            >
+              <option value="">All</option>
+              {(lookups?.managers ?? []).map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
     </div>
   )
 
   return (
-    <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="space-y-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
             Employees
           </h1>
-          {/* IT admin read-only subtitle (p-it-employees wireframe) */}
-          {isItAdmin && (
-            <p className="text-sm text-gray-500 mt-0.5">Read-only</p>
-          )}
+          {/* Employee count (wireframe "48 employees"); IT admin also sees "Read-only" */}
+          <p className="text-sm text-gray-500 mt-0.5">
+            {data !== undefined && `${data.totalElements} employee${data.totalElements === 1 ? '' : 's'}`}
+            {data !== undefined && isItAdmin && ' · '}
+            {isItAdmin && <span>Read-only</span>}
+          </p>
         </div>
 
         {/* + New Employee — HR only; positive action, top right (R-UI-1) */}
@@ -254,3 +312,16 @@ export function EmployeesListPage(): ReactElement {
     </div>
   )
 }
+
+// Filter dropdowns, labels and the outlined row action button (wireframe #hr-employees)
+const filterLabelClass = 'text-sm font-medium text-gray-700'
+const filterSelectClass = `
+  px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900
+  focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] w-44
+`
+const actionButtonClass = `
+  inline-flex items-center justify-center px-3 min-h-[32px] rounded-md
+  border border-gray-300 bg-white hover:bg-gray-50
+  text-xs font-semibold uppercase tracking-wide text-gray-700
+  focus-visible:ring-2 focus-visible:ring-blue-500
+`

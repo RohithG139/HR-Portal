@@ -10,19 +10,12 @@
 
 import type { ReactElement } from 'react'
 import { Link } from 'react-router-dom'
-import { Card } from '../../components/index'
-import type { HrDashboardDto, DashboardTaskDto } from '../../api/dashboard'
+import type { HrDashboardDto, UpcomingEventDto } from '../../api/dashboard'
 import { formatDate } from '../../lib/date'
+import { DashboardTasks, StatCard } from './DashboardParts'
 
 interface HrDashboardProps {
   data: HrDashboardDto
-}
-
-/** R-UI-6: due-state colour for dashboard task rows. */
-function dueStateClass(dueState: string): string {
-  if (dueState === 'OVERDUE') return 'text-red-600'
-  if (dueState === 'DUE_SOON') return 'text-orange-500'
-  return 'text-gray-500'
 }
 
 /**
@@ -35,71 +28,83 @@ function dueStateClass(dueState: string): string {
 export function HrDashboard({ data }: HrDashboardProps): ReactElement {
   return (
     <div className="space-y-6">
-      {/* KPI cards row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* KPI cards row — 4 columns to leave room for bench/PIP cards (deferred) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Active employees — links to /employees?stage=ACTIVE (AC-W06) */}
-        <Link
+        <StatCard
+          label="Active employees"
+          value={data.activeEmployees}
+          sub={data.activeEmployeesDelta > 0 ? `+${data.activeEmployeesDelta} this month` : ''}
           to="/employees?stage=ACTIVE"
-          className="block focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg"
-          aria-label={`Active employees: ${data.activeEmployees}, plus ${data.activeEmployeesDelta} this month`}
-        >
-          <Card className="hover:border-blue-300 transition-colors cursor-pointer">
-            <p className="text-sm text-gray-500 font-medium">Active employees</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">{data.activeEmployees}</p>
-            {data.activeEmployeesDelta > 0 && (
-              <p className="mt-1 text-sm text-green-600">+{data.activeEmployeesDelta} this month</p>
-            )}
-          </Card>
-        </Link>
-
+          ariaLabel={`Active employees: ${data.activeEmployees}, plus ${data.activeEmployeesDelta} this month`}
+        />
         {/* In onboarding — links to /employees?stage=ONBOARDING (AC-W06) */}
-        <Link
+        <StatCard
+          label="In onboarding"
+          value={data.onboardingCount}
+          sub={data.onboardingNames.join(' · ')}
           to="/employees?stage=ONBOARDING"
-          className="block focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg"
-          aria-label={`In onboarding: ${data.onboardingCount}`}
-        >
-          <Card className="hover:border-blue-300 transition-colors cursor-pointer">
-            <p className="text-sm text-gray-500 font-medium">In onboarding</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">{data.onboardingCount}</p>
-            {data.onboardingNames.length > 0 && (
-              <p className="mt-1 text-sm text-gray-500 truncate">
-                {data.onboardingNames.join(', ')}
-              </p>
-            )}
-          </Card>
-        </Link>
+          ariaLabel={`In onboarding: ${data.onboardingCount}`}
+        />
       </div>
 
-      {/* My Tasks list */}
-      <Card title="My Tasks" action={
-        <Link
-          to="/my-tasks"
-          className="text-sm text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-        >
-          View all
-        </Link>
-      }>
-        {data.tasks.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">No open tasks. Well done!</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {data.tasks.map((task: DashboardTaskDto) => (
-              <li key={task.taskId} className="py-3 flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  {task.dueDate !== null && (
-                    <p className={`text-xs ${dueStateClass(task.dueState)}`}>
-                      {formatDate(task.dueDate)}
-                    </p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      {/* My Tasks (2/3) beside Upcoming (1/3) on large screens, stacked below */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+      <DashboardTasks tasks={data.tasks} className="lg:col-span-2" />
+
+      <UpcomingCard events={data.upcoming ?? []} />
+      </div>
     </div>
+  )
+}
+
+/** Title per event type, matching the wireframe's wording. */
+function upcomingTitle(e: UpcomingEventDto): string {
+  switch (e.type) {
+    case 'PIP': return `Final PIP review · ${e.employeeName}`
+    case 'START': return `${e.employeeName} starts`
+    case 'LAST_DAY': return `Last day · ${e.employeeName}`
+    case 'PROBATION': return `Probation ends · ${e.employeeName}`
+    case 'CONTRACT': return `Contract ends · ${e.employeeName}`
+    default: return e.employeeName
+  }
+}
+
+/** Orange ring for review-type events (PIP, probation), blue for the rest (wireframe). */
+function upcomingRingClass(type: string): string {
+  return type === 'PIP' || type === 'PROBATION' ? 'border-orange-400' : 'border-blue-600'
+}
+
+/** "Upcoming" card: vertical timeline of the next dated events. */
+function UpcomingCard({ events }: { events: UpcomingEventDto[] }): ReactElement {
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6" aria-labelledby="hr-dash-upcoming">
+      <h2 id="hr-dash-upcoming" className="pb-3 mb-4 border-b border-gray-200 text-base sm:text-lg font-semibold text-gray-900">
+        Upcoming
+      </h2>
+      {events.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-4">Nothing in the next 90 days.</p>
+      ) : (
+        <ol className="relative">
+          {/* Timeline line behind the rings */}
+          <span aria-hidden="true" className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-200" />
+          {events.map((e) => (
+            <li key={`${e.type}-${e.employeeId}-${e.date}`} className="relative flex gap-3 pb-4 last:pb-0">
+              <span
+                aria-hidden="true"
+                className={`relative mt-0.5 shrink-0 w-4 h-4 rounded-full border-2 bg-white ${upcomingRingClass(e.type)}`}
+              />
+              <Link
+                to={`/employees/${e.employeeId}`}
+                className="min-w-0 rounded focus-visible:ring-2 focus-visible:ring-blue-500 group"
+              >
+                <p className="text-sm font-medium text-gray-900 group-hover:underline">{upcomingTitle(e)}</p>
+                <p className="text-xs text-gray-500">{formatDate(e.date)}</p>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }

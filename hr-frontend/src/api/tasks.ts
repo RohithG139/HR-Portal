@@ -22,6 +22,10 @@ export interface TaskItemDto {
   employeeId: number | null
   dueDate: string | null
   dueState: 'OVERDUE' | 'DUE_SOON' | 'UPCOMING'
+  /** Name of the employee the task is about; null when there is none. */
+  employeeName: string | null
+  /** Who created the task; null = created by the system. */
+  raisedBy: string | null
 }
 
 /** Paginated task list (A36, TaskService.TaskPageDto). */

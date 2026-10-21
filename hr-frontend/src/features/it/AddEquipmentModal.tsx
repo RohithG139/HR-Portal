@@ -126,7 +126,7 @@ export function AddEquipmentModal({ isOpen, onClose, onSaved, employeeId }: AddE
         <Field id="assetModel" label="Model" value={form.model} onChange={(v) => setField('model', String(v))} required error={errors.model} />
         <Field id="assetNumber" label="Asset no." value={form.assetNumber} onChange={(v) => setField('assetNumber', String(v))} required error={errors.assetNumber} />
         <Field id="serialNumber" label="Serial number" value={form.serialNumber} onChange={(v) => setField('serialNumber', String(v))} />
-        <Field id="issueDate" label="Issue date (dd-mm-yyyy)" value={form.issueDate} onChange={(v) => setField('issueDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.issueDate} />
+        <Field id="issueDate" label="Issue date (dd-mm-yyyy)" type="date" value={form.issueDate} onChange={(v) => setField('issueDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.issueDate} />
       </div>
     </Modal>
   )

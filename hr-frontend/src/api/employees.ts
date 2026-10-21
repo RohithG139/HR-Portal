@@ -22,6 +22,8 @@ export interface EmployeeListItemDto {
   employeeCode: string | null
   accountStatus: string | null
   draft: boolean
+  /** Work e-mail, else private e-mail; null for draft rows. */
+  email: string | null
   /**
    * Count of assets currently assigned to this employee.
    * Populated for IT_ADMIN callers (D-W9); null for HR callers (not needed in the HR list view).

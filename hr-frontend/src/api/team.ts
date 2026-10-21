@@ -23,6 +23,12 @@ export interface TeamMemberDto {
   jobTitle: string | null
   /** Lifecycle stage code, e.g. "ACTIVE", "ONBOARDING" (R-UI-5). */
   stage: string
+  /** Current project names, comma-separated; null when on no project. */
+  projects: string | null
+  /** Sum of current project allocations, 0-100+. */
+  allocationPct: number
+  /** ONBOARDING | PIP | OFFBOARDING | ON_PROJECT | BENCH */
+  teamStatus: string
 }
 
 /**

@@ -1,5 +1,6 @@
 package com.cubeworks.hr.dto.workspace;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -19,5 +20,20 @@ import java.util.List;
 public record ItAdminDashboardDto(
         long equipmentRequestsCount,
         long openSetupItemsCount,
-        List<DashboardTaskDto> tasks
+        List<DashboardTaskDto> tasks,
+        // Card detail lines (wireframe #it-dash). Each is null/empty when there is nothing open.
+        /** Earliest-due open equipment request: employee name. */
+        String nextEquipmentName,
+        /** That employee's contract start date. */
+        LocalDate nextEquipmentStartDate,
+        /** Up to 2 names with open "Remaining setup" tasks. */
+        List<String> setupItemNames,
+        /** Exits in progress (APPROVED / IN_PROGRESS) whose accounts must be revoked. */
+        long accessToRevokeCount,
+        /** Earliest such exit: employee name. */
+        String nextRevokeName,
+        /** That employee's last working day. */
+        LocalDate nextRevokeDate,
+        /** Assets flagged NOT_RETURNED by ex-employees (v_unreturned_assets). */
+        long notReturnedCount
 ) {}

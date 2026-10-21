@@ -10,7 +10,7 @@
 
 import type { ReactElement } from 'react'
 import { Link } from 'react-router-dom'
-import { Card, Badge, stageVariant } from '../../components/index'
+import { Card, Badge, stageLabel, stageVariant } from '../../components/index'
 import type { ManagerDashboardDto, DashboardTaskDto, TeamMemberSummaryDto } from '../../api/dashboard'
 import { formatDate } from '../../lib/date'
 
@@ -23,13 +23,6 @@ function dueStateClass(dueState: string): string {
   if (dueState === 'OVERDUE') return 'text-red-600'
   if (dueState === 'DUE_SOON') return 'text-orange-500'
   return 'text-gray-500'
-}
-
-/** Stage label map for display (R-UI-5). */
-const stageLabel: Record<string, string> = {
-  ONBOARDING: 'Onboarding',
-  ACTIVE: 'Active',
-  OFFBOARDING: 'Offboarding',
 }
 
 /**
@@ -115,7 +108,7 @@ export function ManagerDashboard({ data }: ManagerDashboardProps): ReactElement 
                   </div>
                   <div className="shrink-0">
                     <Badge
-                      label={stageLabel[member.stage] ?? member.stage}
+                      label={stageLabel(member.stage)}
                       variant={stageVariant(member.stage)}
                     />
                   </div>

@@ -22,6 +22,7 @@
 
 import { useState, useEffect } from 'react'
 import type { ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Modal, Field } from '../../components/index'
 import { useToast } from '../../components/index'
@@ -66,6 +67,7 @@ export function TransferManagerModal({
   onClose,
 }: TransferManagerModalProps): ReactElement {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { showToast } = useToast()
 
   const [form, setForm] = useState<FormState>({
@@ -121,6 +123,7 @@ export function TransferManagerModal({
       void queryClient.invalidateQueries({ queryKey: ['manager-tasks', employeeId] })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       onClose()
+      void navigate('/employees')
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED') {

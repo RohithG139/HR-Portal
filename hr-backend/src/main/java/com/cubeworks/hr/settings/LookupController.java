@@ -63,10 +63,13 @@ public class LookupController {
         final String fullName = emp.getFirstName() + " " + emp.getLastName();
         final String initials = String.valueOf(emp.getFirstName().charAt(0))
                 + emp.getLastName().charAt(0);
+        // Shown in the top-bar user menu; work email is null until IT creates it
+        final String email = emp.getWorkEmail() != null ? emp.getWorkEmail() : emp.getPrivateEmail();
         return ResponseEntity.ok(Map.of(
                 "employeeId", emp.getId(),
                 "name", fullName,
                 "initials", initials.toUpperCase(),
+                "email", email,
                 "appRole", emp.getAppRole().name(),
                 "stage", emp.getStage().name(),
                 "menu", menu

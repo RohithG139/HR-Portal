@@ -36,6 +36,36 @@ export interface OnboardingSummaryDto {
   doneItems: number
   canComplete: boolean
   version: number | null
+  /** Saved step-1 values (OnboardingDetailsDto); absent on older backends. */
+  details?: OnboardingDetailsDto
+}
+
+/** Step-1 values of an onboarding, for re-showing the Employee details form. */
+export interface OnboardingDetailsDto {
+  firstName: string
+  lastName: string
+  privateEmail: string
+  mobilePhone: string
+  dateOfBirth: string | null
+  nationality: string | null
+  street: string
+  postcode: string
+  city: string
+  contractType: string | null
+  hoursPerWeek: number | null
+  probationMonths: number | null
+  idChecked: boolean
+  contractSignedReceived: boolean
+  rightToWorkVerified: boolean
+  jobTitleId: number | null
+  departmentId: number | null
+  managerId: number | null
+  grade: string | null
+  appRole: string | null
+  buddyId: number | null
+  templateId: number | null
+  /** Optimistic-lock version for A12 (update details). */
+  employeeVersion: number | null
 }
 
 /** One checklist item (OnboardingService.ChecklistItemDto). */

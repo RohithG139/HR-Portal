@@ -10,6 +10,8 @@
 
 import type { ReactElement } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { getTaskCount } from '../../api/tasks'
 import { useAuth } from '../auth/AuthContext'
 import type { AppRole } from '../auth/AuthContext'
 
@@ -57,16 +59,6 @@ function ReportsIcon({ className }: IconProps): ReactElement {
     <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M4 20V10M12 20V4M20 20v-7" />
       <path d="M2 20h20" />
-    </svg>
-  )
-}
-
-function OnboardingIcon({ className }: IconProps): ReactElement {
-  return (
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M4 21v-7a8 8 0 0 1 16 0v7" />
-      <path d="M4 14h16" />
-      <circle cx="12" cy="8" r="3" />
     </svg>
   )
 }
@@ -144,8 +136,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Settings', to: '/settings', icon: SettingsIcon, roles: ['HR'] },
   // Manager: My Team (W5, FRD-01 Wave 3)
   { label: 'My Team', to: '/team', icon: TeamIcon, roles: ['MANAGER'] },
-  // Employee: own dashboard and profile
-  { label: 'My Onboarding', to: '/dashboard/my-onboarding', icon: OnboardingIcon, roles: ['EMPLOYEE'] },
+  // Employee: own profile. No separate onboarding entry — an onboarding employee's
+  // Dashboard already opens their onboarding view (DashboardStub redirect).
   { label: 'My Profile', to: '/my-profile', icon: ProfileIcon, roles: ['EMPLOYEE'] },
 ]
 
@@ -165,6 +157,16 @@ export function Sidebar(): ReactElement {
   const visibleItems = user
     ? NAV_ITEMS.filter((item) => item.roles.includes(user.appRole))
     : []
+
+  // Open-task count for the My Tasks badge (A36). Key sits under ['my-tasks'] so the
+  // My Tasks page's invalidateQueries(['my-tasks']) after completing a task refreshes it too.
+  const { data: taskCount } = useQuery({
+    queryKey: ['my-tasks', 'count'],
+    queryFn: getTaskCount,
+    enabled: user !== null,
+    refetchInterval: 60_000,
+  })
+  const openTasks = taskCount?.count ?? 0
 
   return (
     <aside
@@ -208,6 +210,14 @@ export function Sidebar(): ReactElement {
                   >
                     <Icon className="shrink-0" />
                     {item.label}
+                    {item.to === '/my-tasks' && openTasks > 0 && (
+                      <span
+                        aria-label={`${openTasks} open`}
+                        className="ml-auto min-w-[22px] h-[22px] px-1.5 flex items-center justify-center rounded-full bg-white/20 text-white text-xs font-bold"
+                      >
+                        {openTasks > 99 ? '99+' : openTasks}
+                      </span>
+                    )}
                   </NavLink>
                 </li>
               )

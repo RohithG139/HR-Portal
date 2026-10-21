@@ -1,59 +1,42 @@
 <#--
-  CubeWorks HR override of keycloak.v2/login/login.ftl.
+  CubeWorks HR login page (S13, wireframe `#login-view`).
 
-  Only change from the parent (theme/keycloak.v2/login/login.ftl, confirmed live
-  2026-10-17 from org.keycloak.keycloak-themes-26.0.8.jar): both fields now pass
-  required=true so the "*" marker renders, matching the wireframe's
-  "E-mail address*" / "Password*" (#login-view). Everything else — form action,
-  CSRF, autocomplete, forgot-password link, social providers — is untouched.
+  Self-contained page instead of keycloak.v2's PatternFly layout: the wireframe puts
+  the "Login" title and the CW brand on one row, draws labels on the input border
+  and puts "Forgot password?" beside the button, which the parent template's fixed
+  header/form/footer structure cannot produce. Form contract is unchanged from the
+  parent login.ftl: same action URL, field names (username, password, credentialId),
+  autocomplete hints, forgot-password link and error messages (messages_en.properties).
+  Page frame lives in cw-layout.ftl (shared with login-reset-password.ftl).
 -->
-<#import "template.ftl" as layout>
-<#import "field.ftl" as field>
-<#import "buttons.ftl" as buttons>
-<#import "social-providers.ftl" as identityProviders>
-<@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
-<!-- template: login.ftl (cubeworks override) -->
+<#import "cw-layout.ftl" as cw>
+<#assign hasError = messagesPerField.existsError('username','password')>
+<#-- One combined error for wrong e-mail/password (WS-04) -->
+<@cw.page title=msg("loginAccountTitle") errorText=hasError?then(messagesPerField.getFirstError('username','password'), "")>
+  <#if realm.password>
+    <form id="kc-form-login" action="${url.loginAction}" method="post" novalidate onsubmit="document.getElementById('kc-login').disabled = true; return true;">
+      <#if !usernameHidden??>
+        <fieldset class="cw-field<#if hasError> cw-field-error</#if>">
+          <legend><label for="username"><#if !realm.loginWithEmailAllowed>${msg("username")}<#elseif !realm.registrationEmailAsUsername>${msg("usernameOrEmail")}<#else>${msg("email")}</#if><span class="cw-req" aria-hidden="true">*</span></label></legend>
+          <input id="username" name="username" type="text" value="${(login.username)!''}" autocomplete="username" autofocus required aria-invalid="${hasError?c}">
+        </fieldset>
+      </#if>
 
-    <#if section = "header">
-        ${msg("loginAccountTitle")}
-    <#elseif section = "form">
-        <div id="kc-form">
-          <div id="kc-form-wrapper">
-            <#if realm.password>
-                <form id="kc-form-login" class="${properties.kcFormClass!}" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post" novalidate="novalidate">
-                    <#if !usernameHidden??>
-                        <#assign label>
-                            <#if !realm.loginWithEmailAllowed>${msg("username")}<#elseif !realm.registrationEmailAsUsername>${msg("usernameOrEmail")}<#else>${msg("email")}</#if>
-                        </#assign>
-                        <@field.input name="username" label=label autofocus=true autocomplete="username" value=login.username!'' required=true />
-                    </#if>
+      <fieldset class="cw-field<#if hasError> cw-field-error</#if>">
+        <legend><label for="password">${msg("password")}<span class="cw-req" aria-hidden="true">*</span></label></legend>
+        <input id="password" name="password" type="password" autocomplete="current-password" required <#if usernameHidden??>autofocus</#if> aria-invalid="${hasError?c}">
+      </fieldset>
 
-                    <@field.password name="password" label=msg("password") forgotPassword=realm.resetPasswordAllowed autofocus=usernameHidden?? autocomplete="current-password" required=true />
+      <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>>
 
-                    <div class="${properties.kcFormGroupClass!}">
-                        <#if realm.rememberMe && !usernameHidden??>
-                            <@field.checkbox name="rememberMe" label=msg("rememberMe") value=login.rememberMe?? />
-                        </#if>
-                    </div>
-
-                    <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>/>
-                    <@buttons.loginButton />
-                </form>
-            </#if>
-            </div>
-        </div>
-    <#elseif section = "info" >
-        <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
-            <div id="kc-registration-container" class="${properties.kcLoginFooterBand!}">
-                <div id="kc-registration" class="${properties.kcLoginFooterBandItem!}">
-                    <span>${msg("noAccount")} <a href="${url.registrationUrl}">${msg("doRegister")}</a></span>
-                </div>
-            </div>
+      <div class="cw-actions">
+        <#if realm.resetPasswordAllowed>
+          <a class="cw-link" href="${url.loginResetCredentialsUrl}">${msg("doForgotPassword")}</a>
+        <#else>
+          <span></span>
         </#if>
-    <#elseif section = "socialProviders" >
-        <#if realm.password && social.providers?? && social.providers?has_content>
-            <@identityProviders.show social=social/>
-        </#if>
-    </#if>
-
-</@layout.registrationLayout>
+        <button id="kc-login" name="login" type="submit" class="cw-button">${msg("doLogIn")}</button>
+      </div>
+    </form>
+  </#if>
+</@cw.page>

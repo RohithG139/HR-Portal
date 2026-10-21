@@ -13,6 +13,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 let mockRole = 'MANAGER'
 
@@ -30,13 +31,20 @@ vi.mock('../auth/AuthContext', () => ({
   }),
 }))
 
+vi.mock('../../api/tasks', () => ({
+  getTaskCount: vi.fn().mockResolvedValue({ count: 6 }),
+}))
+
 import { Sidebar } from './Sidebar'
 
 function renderSidebar(): void {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
-    <MemoryRouter>
-      <Sidebar />
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
@@ -94,12 +102,23 @@ describe('Sidebar — Employee role', () => {
     mockRole = 'EMPLOYEE'
   })
 
-  it('renders Dashboard, My Onboarding and My Profile, and no HR/Manager-only links', () => {
+  it('renders Dashboard and My Profile, no separate My Onboarding, and no HR/Manager-only links', () => {
     renderSidebar()
     expect(screen.getByText('Dashboard')).toBeTruthy()
-    expect(screen.getByText('My Onboarding')).toBeTruthy()
+    expect(screen.queryByText('My Onboarding')).toBeNull()
     expect(screen.getByText('My Profile')).toBeTruthy()
     expect(screen.queryByText('Employees')).toBeNull()
     expect(screen.queryByText('My Team')).toBeNull()
+  })
+})
+
+describe('Sidebar — My Tasks badge', () => {
+  beforeEach(() => {
+    mockRole = 'HR'
+  })
+
+  it('shows the open-task count next to My Tasks', async () => {
+    renderSidebar()
+    expect((await screen.findByLabelText('6 open')).textContent).toBe('6')
   })
 })
