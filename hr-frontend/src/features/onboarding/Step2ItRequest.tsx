@@ -10,7 +10,7 @@
  * <Step2ItRequest employeeId={42} onContinue={() => goToStep(2)} />
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getOnboarding, saveItRequest, sendItRequest } from '../../api/onboarding'
@@ -80,6 +80,25 @@ export function Step2ItRequest({ employeeId, onContinue }: Step2Props): ReactEle
   })
 
   const alreadySent = summary?.itStatus !== 'NOT_SENT'
+
+  // Populate the form once with what was saved, so coming back to step 2 (or after a
+  // refresh) shows the request again. Only once: later summary refetches (e.g. a
+  // checklist tick in step 3) must not overwrite edits that are not saved yet.
+  const prefilled = useRef(false)
+  useEffect(() => {
+    const it = summary?.itRequest
+    if (prefilled.current || it === undefined) return
+    prefilled.current = true
+    setForm({
+      laptopModel: it.laptopModel ?? '',
+      keyboardLayout: it.keyboardLayout ?? '',
+      readyBy: it.readyBy !== null ? formatDate(it.readyBy) : '',
+      deliveryMethod: it.deliveryMethod ?? '',
+      notes: it.notes ?? '',
+      accessories: it.accessories,
+      accounts: it.accounts,
+    })
+  }, [summary])
 
   const saveMutation = useMutation({
     mutationFn: () => saveItRequest(employeeId, {

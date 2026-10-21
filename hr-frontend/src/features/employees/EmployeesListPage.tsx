@@ -53,6 +53,8 @@ export function EmployeesListPage(): ReactElement {
   // Department / manager filters (HR only) — server-side, by id ('' = all)
   const [departmentFilter, setDepartmentFilter] = useState('')
   const [managerFilter, setManagerFilter] = useState('')
+  // A04 is paged server-side (20 per page); 0-based, reset to 0 whenever a filter changes
+  const [page, setPage] = useState(0)
 
   const listParams = {
     stage: stageFilter || undefined,
@@ -61,8 +63,8 @@ export function EmployeesListPage(): ReactElement {
   }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['employees', listParams],
-    queryFn: () => listEmployees(listParams),
+    queryKey: ['employees', listParams, page],
+    queryFn: () => listEmployees({ ...listParams, page }),
   })
 
   // Options for the department/manager dropdowns (A02 is HR-only)
@@ -213,7 +215,7 @@ export function EmployeesListPage(): ReactElement {
         <select
           id="stage-filter"
           value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value)}
+          onChange={(e) => { setStageFilter(e.target.value); setPage(0) }}
           className={filterSelectClass}
         >
           <option value="">All</option>
@@ -229,7 +231,7 @@ export function EmployeesListPage(): ReactElement {
             <select
               id="department-filter"
               value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
+              onChange={(e) => { setDepartmentFilter(e.target.value); setPage(0) }}
               className={filterSelectClass}
             >
               <option value="">All</option>
@@ -243,7 +245,7 @@ export function EmployeesListPage(): ReactElement {
             <select
               id="manager-filter"
               value={managerFilter}
-              onChange={(e) => setManagerFilter(e.target.value)}
+              onChange={(e) => { setManagerFilter(e.target.value); setPage(0) }}
               className={filterSelectClass}
             >
               <option value="">All</option>
@@ -303,11 +305,29 @@ export function EmployeesListPage(): ReactElement {
         emptyMessage="No employees found."
       />
 
-      {/* Pagination placeholder — full pagination in gate 5 */}
+      {/* Pager — the search box only filters the rows of the current page */}
       {data !== undefined && data.totalPages > 1 && (
-        <p className="text-sm text-gray-400 text-center">
-          Page {data.page + 1} of {data.totalPages} ({data.totalElements} total)
-        </p>
+        <nav aria-label="Employee list pages" className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(p - 1, 0))}
+            disabled={data.page === 0}
+            className={pagerButtonClass}
+          >
+            ← Previous
+          </button>
+          <span className="text-sm text-gray-500">
+            Page {data.page + 1} of {data.totalPages} ({data.totalElements} total)
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(p + 1, data.totalPages - 1))}
+            disabled={data.page >= data.totalPages - 1}
+            className={pagerButtonClass}
+          >
+            Next →
+          </button>
+        </nav>
       )}
     </div>
   )
@@ -318,6 +338,12 @@ const filterLabelClass = 'text-sm font-medium text-gray-700'
 const filterSelectClass = `
   px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900
   focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-h-[44px] w-44
+`
+const pagerButtonClass = `
+  px-3 min-h-[44px] rounded-md border border-gray-300 bg-white hover:bg-gray-50
+  text-sm font-medium text-gray-700
+  focus-visible:ring-2 focus-visible:ring-blue-500
+  disabled:opacity-50 disabled:cursor-not-allowed
 `
 const actionButtonClass = `
   inline-flex items-center justify-center px-3 min-h-[32px] rounded-md

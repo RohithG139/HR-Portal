@@ -38,6 +38,20 @@ export interface OnboardingSummaryDto {
   version: number | null
   /** Saved step-1 values (OnboardingDetailsDto); absent on older backends. */
   details?: OnboardingDetailsDto
+  /** Saved step-2 values (OnboardingService.ItRequestDto); absent on older backends. */
+  itRequest?: ItRequestValuesDto
+}
+
+/** Step-2 values of an onboarding, for re-showing the IT & equipment request form. */
+export interface ItRequestValuesDto {
+  laptopModel: string | null
+  keyboardLayout: string | null
+  /** ISO yyyy-MM-dd */
+  readyBy: string | null
+  deliveryMethod: string | null
+  notes: string | null
+  accessories: string[]
+  accounts: string[]
 }
 
 /** Step-1 values of an onboarding, for re-showing the Employee details form. */

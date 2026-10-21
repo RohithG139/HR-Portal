@@ -166,11 +166,15 @@ export function OnboardingWizard(): ReactElement {
             initialLastName={initialLastName}
           />
         )}
-        {activeStep === 1 && effectiveEmployeeId !== null && (
-          <Step2ItRequest
-            employeeId={effectiveEmployeeId}
-            onContinue={() => goToStep(2)}
-          />
+        {/* Step 2 stays mounted (hidden) while the employee exists, so a selection not saved yet (accessories and
+            accounts are only stored when sent to IT, D-05) survives switching tabs */}
+        {effectiveEmployeeId !== null && (
+          <div hidden={activeStep !== 1}>
+            <Step2ItRequest
+              employeeId={effectiveEmployeeId}
+              onContinue={() => goToStep(2)}
+            />
+          </div>
         )}
         {activeStep === 2 && effectiveEmployeeId !== null && (
           <Step3Checklist employeeId={effectiveEmployeeId} />

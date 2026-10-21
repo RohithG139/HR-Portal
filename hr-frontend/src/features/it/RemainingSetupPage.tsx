@@ -59,9 +59,9 @@ export function RemainingSetupPage(): ReactElement {
       setTickingId(null)
       void queryClient.invalidateQueries({ queryKey: ['checklist-it', employeeId] })
     },
-    onError: () => {
+    onError: (err: unknown) => {
       setTickingId(null)
-      showToast('Failed to tick item.', 'error')
+      showToast(err instanceof ApiResponseError ? err.body.message : 'Failed to tick item.', 'error')
     },
   })
 
@@ -74,9 +74,9 @@ export function RemainingSetupPage(): ReactElement {
       setTickingId(null)
       void queryClient.invalidateQueries({ queryKey: ['checklist-it', employeeId] })
     },
-    onError: () => {
+    onError: (err: unknown) => {
       setTickingId(null)
-      showToast('Failed to untick item.', 'error')
+      showToast(err instanceof ApiResponseError ? err.body.message : 'Failed to untick item.', 'error')
     },
   })
 
