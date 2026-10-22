@@ -10,35 +10,31 @@
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getMyOnboarding } from '../../api/onboarding'
 import type { ChecklistItemDto, AssetDto } from '../../api/onboarding'
 import { Card, Badge } from '../../components/index'
-import { formatDate } from '../../lib/date'
+import { dueDateColourClass, formatDate } from '../../lib/date'
 import { PolicyModal } from './PolicyModal'
 import { ConfirmEquipmentModal } from './ConfirmEquipmentModal'
 
 /**
- * Due-state CSS classes for R-UI-6 colour coding.
- * The backend computes dueState; React only maps to colours (R-ARC-1).
+ * Due-date colour for R-UI-6: display only, not business logic (R-ARC-1).
+ * The ISO date is read as a local calendar date (lib/date.ts `daysUntil`).
  */
 function dueDateClass(item: ChecklistItemDto): string {
   if (item.status === 'DONE') return 'text-gray-400'
   if (item.dueDate === null || item.dueDate === '') return 'text-gray-500'
-  const today = new Date()
-  const due = new Date(item.dueDate)
-  const diffMs = due.getTime() - today.getTime()
-  const diffDays = diffMs / (1000 * 60 * 60 * 24)
-  if (diffDays < 0) return 'text-red-600'
-  if (diffDays <= 3) return 'text-orange-500'
-  return 'text-gray-500'
+  return dueDateColourClass(item.dueDate)
 }
 
 /**
  * NewJoinerDashboard renders the employee's personalised onboarding view.
  *
- * Items are grouped by section. POLICY items open the PolicyModal (S8).
- * EQUIPMENT items open the ConfirmEquipmentModal (S9).
+ * Items are grouped by section. POLICY_ACK items open the PolicyModal (S8).
+ * EQUIPMENT_CONFIRM items open the ConfirmEquipmentModal (S9); PROFILE items link to
+ * My Profile, which ticks them on save once the emergency contact is complete.
  * All other items are plain checkboxes (employee ticks them via A17/A18
  * through the regular checklist flow — shown as read-only status here).
  */
@@ -111,7 +107,7 @@ export function NewJoinerDashboard(): ReactElement {
                     </div>
 
                     {/* Action buttons for special item kinds */}
-                    {!isDone && item.itemKind === 'POLICY' && (
+                    {!isDone && item.itemKind === 'POLICY_ACK' && (
                       <button
                         type="button"
                         onClick={() => setPolicyItemId(item.id)}
@@ -120,7 +116,7 @@ export function NewJoinerDashboard(): ReactElement {
                         Read & acknowledge policy →
                       </button>
                     )}
-                    {!isDone && item.itemKind === 'EQUIPMENT' && (
+                    {!isDone && item.itemKind === 'EQUIPMENT_CONFIRM' && (
                       <button
                         type="button"
                         onClick={() => setEquipItemId(item.id)}
@@ -128,6 +124,14 @@ export function NewJoinerDashboard(): ReactElement {
                       >
                         Confirm equipment received →
                       </button>
+                    )}
+                    {!isDone && item.itemKind === 'PROFILE' && (
+                      <Link
+                        to="/my-profile"
+                        className="mt-1 inline-flex items-center text-xs text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded min-h-[44px]"
+                      >
+                        Complete my profile →
+                      </Link>
                     )}
                   </div>
 

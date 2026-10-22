@@ -212,4 +212,13 @@ public interface ChecklistItemRepository extends JpaRepository<ChecklistItem, Lo
               AND ci.overdueReminderAt IS NULL
             """)
     List<ChecklistItem> findRemindableOverdue(@Param("cutoff") LocalDate cutoff);
+
+    /**
+     * Returns the checklist items linked to an asset ({@code checklist_item.asset_id}, ONB-06),
+     * so removing the asset (A22) can reopen the item it had ticked.
+     *
+     * @param assetId the asset
+     * @return linked items (normally zero or one)
+     */
+    List<ChecklistItem> findByAssetId(Long assetId);
 }

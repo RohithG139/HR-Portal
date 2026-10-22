@@ -2,6 +2,7 @@ package com.cubeworks.hr.onboarding;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -22,4 +23,12 @@ public interface OnboardingRepository extends JpaRepository<Onboarding, Long> {
      * @return the onboarding record, if it exists
      */
     Optional<Onboarding> findByEmployeeId(Long employeeId);
+
+    /**
+     * Returns all onboardings in the given status (e.g. IN_PROGRESS for the overdue check).
+     *
+     * @param status the onboarding status
+     * @return matching onboardings
+     */
+    List<Onboarding> findByStatus(OnboardingStatus status);
 }

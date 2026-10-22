@@ -44,6 +44,12 @@ interface TableProps<T> {
   emptyMessage?: string
   /** Additional filter controls rendered to the left of the search box. */
   filters?: ReactNode
+  /**
+   * Server-side search: when given, the search box is controlled by the parent and rows are
+   * not filtered here (the parent passes the search to its API, e.g. a paged list).
+   */
+  search?: string
+  onSearchChange?: (value: string) => void
 }
 
 type SortDir = 'asc' | 'desc'
@@ -69,13 +75,19 @@ export function Table<T>({
   isLoading = false,
   emptyMessage = 'No records found.',
   filters,
+  search: serverSearch,
+  onSearchChange,
 }: TableProps<T>): ReactElement {
-  const [search, setSearch] = useState('')
+  const [localSearch, setLocalSearch] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
+  const isServerSearch = onSearchChange !== undefined
+  const search = isServerSearch ? (serverSearch ?? '') : localSearch
+  const setSearch = isServerSearch ? onSearchChange : setLocalSearch
+
   // Client-side search: filter rows where any column value contains the search string
-  const searched = search.trim() === ''
+  const searched = isServerSearch || search.trim() === ''
     ? rows
     : rows.filter((row) =>
         columns.some((col) => {

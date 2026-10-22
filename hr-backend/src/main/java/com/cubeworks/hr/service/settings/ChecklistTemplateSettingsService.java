@@ -44,6 +44,7 @@ public class ChecklistTemplateSettingsService {
     private final ChecklistTemplateRepository templateRepository;
     private final ChecklistTemplateItemRepository itemRepository;
     private final JobTitleRepository jobTitleRepository;
+    private final com.cubeworks.hr.employee.DocumentRepository documentRepository;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -61,12 +62,14 @@ public class ChecklistTemplateSettingsService {
     public ChecklistTemplateSettingsService(final ChecklistTemplateRepository templateRepository,
                                             final ChecklistTemplateItemRepository itemRepository,
                                             final JobTitleRepository jobTitleRepository,
+                                            final com.cubeworks.hr.employee.DocumentRepository documentRepository,
                                             final AuditLogService auditLogService,
                                             final ObjectMapper objectMapper,
                                             final Clock clock) {
         this.templateRepository = templateRepository;
         this.itemRepository = itemRepository;
         this.jobTitleRepository = jobTitleRepository;
+        this.documentRepository = documentRepository;
         this.auditLogService = auditLogService;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -201,6 +204,7 @@ public class ChecklistTemplateSettingsService {
                 copy.setSection(src.getSection());
                 copy.setOwnerRole(src.getOwnerRole());
                 copy.setItemKind(src.getItemKind());
+                copy.setPolicyDocument(src.getPolicyDocument());
                 copy.setMandatory(src.isMandatory());
                 copy.setDueOffsetDays(src.getDueOffsetDays());
                 copy.setSortOrder(src.getSortOrder());
@@ -291,6 +295,7 @@ public class ChecklistTemplateSettingsService {
         item.setOwnerRole(ownerRole);
         item.setMandatory(request.mandatory());
         item.setDueOffsetDays(request.dueOffsetDays());
+        applyKind(item, request);
         item.setSortOrder(nextSortOrder);
         item.setCreatedAt(now);
         item.setCreatedBy(actor.getId());
@@ -346,6 +351,7 @@ public class ChecklistTemplateSettingsService {
         item.setOwnerRole(ownerRole);
         item.setMandatory(request.mandatory());
         item.setDueOffsetDays(request.dueOffsetDays());
+        applyKind(item, request);
         item.setUpdatedAt(now);
         item.setUpdatedBy(actor.getId());
         itemRepository.save(item);
@@ -409,7 +415,37 @@ public class ChecklistTemplateSettingsService {
                 item.getOwnerRole().name(),
                 item.isMandatory(),
                 item.getDueOffsetDays(),
-                item.getSortOrder());
+                item.getSortOrder(),
+                item.getItemKind() != null ? item.getItemKind().name() : ItemKind.GENERIC.name(),
+                item.getPolicyDocument() != null ? item.getPolicyDocument().getId() : null);
+    }
+
+    /**
+     * Sets {@code item_kind} (GENERIC when omitted) and, for a POLICY_ACK item only, the linked
+     * POLICY document (D-07; DB CHECK {@code policy_document_id is null or item_kind = 'POLICY_ACK'}).
+     */
+    private void applyKind(final ChecklistTemplateItem item, final ChecklistTemplateItemRequest request) {
+        final ItemKind kind;
+        if (request.itemKind() == null || request.itemKind().isBlank()) {
+            kind = ItemKind.GENERIC;
+        } else {
+            try {
+                kind = ItemKind.valueOf(request.itemKind());
+            } catch (IllegalArgumentException e) {
+                throw ApiException.fieldValidation(List.of(
+                        Map.of("field", "itemKind", "message", "This field is required.")));
+            }
+        }
+        item.setItemKind(kind);
+        if (kind == ItemKind.POLICY_ACK && request.policyDocumentId() != null) {
+            final com.cubeworks.hr.employee.Document doc = documentRepository.findById(request.policyDocumentId())
+                    .filter(d -> d.getDocType() == com.cubeworks.hr.employee.DocType.POLICY)
+                    .orElseThrow(() -> ApiException.fieldValidation(List.of(
+                            Map.of("field", "policyDocumentId", "message", "This field is required."))));
+            item.setPolicyDocument(doc);
+        } else {
+            item.setPolicyDocument(null);
+        }
     }
 
     private ChecklistSection parseSection(final String value) {
@@ -459,6 +495,8 @@ public class ChecklistTemplateSettingsService {
             m.put("ownerRole", item.getOwnerRole().name());
             m.put("mandatory", item.isMandatory());
             m.put("dueOffsetDays", item.getDueOffsetDays());
+            m.put("itemKind", item.getItemKind() != null ? item.getItemKind().name() : null);
+            m.put("policyDocumentId", item.getPolicyDocument() != null ? item.getPolicyDocument().getId() : null);
             return objectMapper.writeValueAsString(m);
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialise item snapshot", e);

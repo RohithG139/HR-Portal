@@ -107,3 +107,5 @@ The **Client** role in the legacy `emp.caseteam` is removed (G-07).
 ```
 
 `Probation.reviewId` is set later, when the review row is created (outside F01).
+
+**As built (F02, 2026-10-21):** the case does **not** start with a `Probation` item. Spring creates it (`POST /cases/{id}/casefile/create/Probation`) when the probation-review scheduler creates the review row — `{reviewId, reviewDate}` together, `reviewDate = v_contract.probation_end_date − PROBATION_REVIEW` at 09:00Z — then starts "Probation review" (E1 fallback). `outcome` and `hrDecision` are written by the two tasks' output bindings. The field name stays `reviewId` (FRD-02 v1.2's item list says `probationReviewId`; spec FRD-02 §8 keeps the shorter name used here and in the model). Employees with probation = None never get the item (0..1).

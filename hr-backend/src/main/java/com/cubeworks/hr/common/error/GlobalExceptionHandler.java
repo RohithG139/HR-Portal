@@ -91,6 +91,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles an upload over {@code spring.servlet.multipart.max-file-size} as a field error on
+     * {@code file}, so the upload control shows it instead of a generic failure toast.
+     *
+     * @param ex the size-limit exception
+     * @return 400 VALIDATION_FAILED on field {@code file}
+     */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUploadSize(
+            final org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+        return ResponseEntity
+                .badRequest()
+                .body(Map.of(
+                        "code", ErrorCodes.VALIDATION_FAILED,
+                        "errors", List.of(Map.of(
+                                "field", "file",
+                                "message", "The file is too large (maximum 10 MB)."))));
+    }
+
+    /**
      * Handles domain exceptions thrown by service methods.
      *
      * <p>The HTTP status is determined by {@link ApiException#getStatus()}, allowing services to
@@ -165,6 +184,24 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("code", ErrorCodes.STALE_VERSION,
                         "message", "Version conflict — reload and retry"));
+    }
+
+    /**
+     * A database constraint (CHECK / UNIQUE / FK) rejected the write. Services validate first
+     * with the FRD messages; this is the safety net so a constraint that slips through returns
+     * a {@code 409 CONFLICT} in the R-API-3 format instead of a 500. The constraint details are
+     * logged, never returned (they expose schema internals).
+     *
+     * @param ex the integrity violation
+     * @return 409 {@code {"code":"CONFLICT","message":"..."}}
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrity(
+            final org.springframework.dao.DataIntegrityViolationException ex) {
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("code", ErrorCodes.CONFLICT,
+                        "message", "The change conflicts with existing data."));
     }
 
     /**

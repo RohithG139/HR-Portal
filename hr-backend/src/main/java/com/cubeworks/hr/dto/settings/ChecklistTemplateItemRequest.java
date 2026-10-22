@@ -16,6 +16,10 @@ import jakarta.validation.constraints.Size;
  * @param ownerRole     owner role enum value; required; must not be SYSTEM
  * @param mandatory     whether the item is mandatory; required
  * @param dueOffsetDays days after start date the item is due; required; must be ≥ 0
+ * @param itemKind      optional {@code item_kind} (GENERIC when omitted), e.g. POLICY_ACK, PROFILE,
+ *                      EQUIPMENT_CONFIRM, EQUIPMENT, ACCOUNT
+ * @param policyDocumentId optional POLICY document (uploaded via A07) shown by a POLICY_ACK item;
+ *                      only kept when {@code itemKind = POLICY_ACK} (DB CHECK)
  */
 public record ChecklistTemplateItemRequest(
         @NotBlank(message = "This field is required.")
@@ -33,5 +37,9 @@ public record ChecklistTemplateItemRequest(
 
         @NotNull(message = "This field is required.")
         @Min(value = 0)
-        Integer dueOffsetDays) {
+        Integer dueOffsetDays,
+
+        String itemKind,
+
+        Long policyDocumentId) {
 }

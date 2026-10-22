@@ -116,7 +116,7 @@ export function MyTasksPage(): ReactElement {
       accessor: () => '',
       sortable: false,
       render: (t) => {
-        const route = taskRoute(user?.appRole, t.title, t.employeeId, equipmentOpenFor)
+        const route = taskRoute(user?.appRole, t.title, t.employeeId, equipmentOpenFor, t)
         return route !== undefined ? (
           <Link to={route} className={actionButtonClass} aria-label={`Open ${t.title}`}>
             Open

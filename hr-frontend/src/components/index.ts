@@ -20,3 +20,5 @@ export type { Column } from './Table/Table'
 export { Checklist } from './Checklist/Checklist'
 
 export { TaskList } from './TaskList/TaskList'
+
+export { UndoBanner } from './UndoBanner/UndoBanner'

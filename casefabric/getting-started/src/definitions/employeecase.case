@@ -1,6 +1,6 @@
 <case xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne" id="employeecase.case" name="employeecase" expressionLanguage="spel" guid="_F01emp0">
     <documentation textFormat="text/plain">
-        <text><![CDATA[Case of employee: one case per employee. F01 (Create employee -> Onboarding) scope only: the Onboarding checklist / Equipment request / Remaining setup flow and the "Employee onboarded" milestone, per docs/features/F01-onboarding/spec.md section 8. Later features add their own stages to this same casePlanModel in their own gate 3.]]></text>
+        <text><![CDATA[Case of employee: one case per employee. FRD-02 scope (F01 onboarding + F02 probation): stage "Onboarding" (Onboarding checklist / Equipment request / Remaining setup / Onboarding overdue, milestone "Employee onboarded"), stage "Active employment" (entered on "Employee onboarded"; "Create development plan" for FRD-04), and the probation review (Probation review / Approve end of employment, milestone "Probation passed") per docs/features/FRD-02-onboarding-probation/spec.md section 8. Later features add their own stages to this same casePlanModel in their own gate 3.]]></text>
     </documentation>
     <caseFileModel typeRef="employeecase.type"/>
     <casePlanModel id="cm_employeecase.case_employeecase_0" name="Employee case" autoComplete="false">
@@ -26,111 +26,227 @@ callback is ever lost).]]></text>
                 </transformation>
             </parameterMapping>
         </processTask>
-        <humanTask id="pi_onboarding_checklist" name="Onboarding checklist" isBlocking="true" performerRef="cr_employeecase_HR">
+        <stage id="pi_stage_onboarding" name="Onboarding" autoComplete="true">
             <documentation textFormat="text/plain">
-                <text><![CDATA[Owner: HR. Active from case start. Completed once all mandatory checklist items are done (ONB-05); output sets Onboarding.completed, which raises the "Employee onboarded" milestone.]]></text>
+                <text><![CDATA[FRD-00 section 3 stage 1: starts when HR adds the employee (case start), ends when all mandatory checklist items are done (milestone "Employee onboarded"). autoComplete=true: completes once its active work is done; manual-activation items still Enabled (e.g. "Onboarding overdue" never needed) do not block it.]]></text>
             </documentation>
-            <outputs id="out_onboarding_checklist_completed" name="Onboarding.completed" bindingRef="Onboarding"/>
-            <extensionElements mustUnderstand="false">
-                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="onboardingchecklist.humantask">
-                    <parameterMapping id="pm_onboarding_checklist_out_completed" sourceRef="completed__oc001" targetRef="out_onboarding_checklist_completed">
-                        <transformation id="pm_onboarding_checklist_out_completed_t">
-                            <body><![CDATA[{'completed':completed}]]></body>
-                        </transformation>
-                    </parameterMapping>
-                    <duedate id="dd_onboarding_checklist" contextRef="Employee">
-                        <condition id="dd_onboarding_checklist_cond">
-                            <body><![CDATA[Employee.startDate == null ? null : (T(java.time.LocalDate).parse(Employee.startDate).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
+            <humanTask id="pi_onboarding_checklist" name="Onboarding checklist" isBlocking="true" performerRef="cr_employeecase_HR">
+                <documentation textFormat="text/plain">
+                    <text><![CDATA[Owner: HR. Active from case start. Completed once all mandatory checklist items are done (ONB-05); output sets Onboarding.completed, which raises the "Employee onboarded" milestone.]]></text>
+                </documentation>
+                <outputs id="out_onboarding_checklist_completed" name="Onboarding.completed" bindingRef="Onboarding"/>
+                <extensionElements mustUnderstand="false">
+                    <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="onboardingchecklist.humantask">
+                        <parameterMapping id="pm_onboarding_checklist_out_completed" sourceRef="completed__oc001" targetRef="out_onboarding_checklist_completed">
+                            <transformation id="pm_onboarding_checklist_out_completed_t">
+                                <body><![CDATA[{'completed':completed}]]></body>
+                            </transformation>
+                        </parameterMapping>
+                        <duedate id="dd_onboarding_checklist" contextRef="Employee">
+                            <condition id="dd_onboarding_checklist_cond">
+                                <body><![CDATA[Employee.startDate == null ? null : (T(java.time.LocalDate).parse(Employee.startDate).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
+                            </condition>
+                        </duedate>
+                    </cafienne:implementation>
+                </extensionElements>
+            </humanTask>
+            <milestone id="pi_employee_onboarded" name="Employee onboarded">
+                <entryCriterion id="ec_employee_onboarded">
+                    <planItemOnPart id="op_employee_onboarded" sourceRef="pi_onboarding_checklist">
+                        <standardEvent>complete</standardEvent>
+                    </planItemOnPart>
+                </entryCriterion>
+            </milestone>
+            <humanTask id="pi_equipment_request" name="Equipment request" isBlocking="true" performerRef="cr_employeecase_ITAdmin">
+                <documentation textFormat="text/plain">
+                    <text><![CDATA[Owner: IT admin. Raised when HR sends the IT & equipment request (Onboarding.itRequestSent = true). Output sets Onboarding.itSetupComplete, computed by Spring from checklist_item.
+
+    No entryCriterion here (removed 2026-10-16, Wave 1): a caseFileItemOnPart listening for an
+    "update" transition on "Onboarding", gated by an ifPart on itRequestSent == true, looked right
+    and was reported "verified live" on 2026-10-15, but that verification happened to be the FIRST
+    update ever made to "Onboarding" in that test case. Confirmed live against the real engine
+    (GET /cases/{id}/history/events, reproduced across a full engine process restart, not a
+    transient hiccup): this onPart is evaluated only on the first-ever "Update" transition of a
+    case-file item; every later update is logged by the engine as "Adding delayed event Update to
+    myself" and never actually re-evaluated. In the real flow "Onboarding" is updated repeatedly
+    before itRequestSent ever becomes true (checklist ticking updates mandatoryItemsDone first), so
+    the onPart always exhausts itself on the wrong update and this task never activated. Plan-item
+    onParts (e.g. "Remaining setup"'s, below) don't share this failure mode — a human task's own
+    "complete" transition only happens once, same as "Employee onboarded"'s milestone sentry above,
+    both of which fire reliably. OnboardingService.sendItRequest now drives this plan item directly
+    via CaseEngineClient.startPlanItem (POST /cases/{id}/planitems/{id}/start) right after setting
+    Onboarding.itRequestSent = true, instead of relying on a sentry confirmed broken for this shape
+    of case-file item in this engine version (1.1.35).
+
+    manualActivationRule = true (added 2026-10-19): with no entryCriterion and no manual activation,
+    CMMN activates this task the moment the case plan starts, so IT would see it before HR ever sent
+    the request and Spring's later "start" call would hit an already-Active item. With the rule it
+    waits in Enabled until OnboardingService.sendItRequest starts it.
+
+    Due date: Onboarding.itReadyBy, the HR-entered "ready by" date (F01 spec section 8), written into
+    the case file by sendItRequest in the same update that sets itRequestSent.]]></text>
+                </documentation>
+                <itemControl id="ic_equipment_request">
+                    <manualActivationRule id="mar_equipment_request">
+                        <condition id="mar_equipment_request_cond">
+                            <body><![CDATA[true]]></body>
                         </condition>
-                    </duedate>
-                </cafienne:implementation>
-            </extensionElements>
-        </humanTask>
-        <milestone id="pi_employee_onboarded" name="Employee onboarded">
-            <entryCriterion id="ec_employee_onboarded">
-                <planItemOnPart id="op_employee_onboarded" sourceRef="pi_onboarding_checklist">
-                    <standardEvent>complete</standardEvent>
+                    </manualActivationRule>
+                </itemControl>
+                <outputs id="out_equipment_request_itSetupComplete" name="Onboarding.itSetupComplete" bindingRef="Onboarding"/>
+                <extensionElements mustUnderstand="false">
+                    <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="equipmentrequest.humantask">
+                        <parameterMapping id="pm_equipment_request_out_itSetupComplete" sourceRef="itSetupComplete__eq001" targetRef="out_equipment_request_itSetupComplete">
+                            <transformation id="pm_equipment_request_out_itSetupComplete_t">
+                                <body><![CDATA[{'itSetupComplete':itSetupComplete}]]></body>
+                            </transformation>
+                        </parameterMapping>
+                        <duedate id="dd_equipment_request" contextRef="Onboarding">
+                            <condition id="dd_equipment_request_cond">
+                                <body><![CDATA[Onboarding.itReadyBy == null ? null : (T(java.time.LocalDate).parse(Onboarding.itReadyBy).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
+                            </condition>
+                        </duedate>
+                    </cafienne:implementation>
+                </extensionElements>
+            </humanTask>
+            <humanTask id="pi_remaining_setup" name="Remaining setup" isBlocking="true" performerRef="cr_employeecase_ITAdmin">
+                <documentation textFormat="text/plain">
+                    <text><![CDATA[Owner: IT admin. Raised only when "Equipment request" completes and IT work is still left (Onboarding.itSetupComplete != true), per F01 D-18. No case-file output.]]></text>
+                </documentation>
+                <entryCriterion id="ec_remaining_setup">
+                    <ifPart contextRef="Onboarding">
+                        <condition>
+                            <body><![CDATA[Onboarding?.itSetupComplete != true]]></body>
+                        </condition>
+                    </ifPart>
+                    <planItemOnPart id="op_remaining_setup" sourceRef="pi_equipment_request">
+                        <standardEvent>complete</standardEvent>
+                    </planItemOnPart>
+                </entryCriterion>
+                <extensionElements mustUnderstand="false">
+                    <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="remainingsetup.humantask">
+                        <duedate id="dd_remaining_setup" contextRef="Onboarding">
+                            <condition id="dd_remaining_setup_cond">
+                                <body><![CDATA[Onboarding.itReadyBy == null ? null : (T(java.time.LocalDate).parse(Onboarding.itReadyBy).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
+                            </condition>
+                        </duedate>
+                    </cafienne:implementation>
+                </extensionElements>
+            </humanTask>
+            <humanTask id="pi_onboarding_overdue" name="Onboarding overdue" isBlocking="true" performerRef="cr_employeecase_HR">
+                <documentation textFormat="text/plain">
+                    <text><![CDATA[Owner: HR. FRD-02 section 1: "If onboarding is still not complete 3 days after the start date (configurable, FRD-08), HR gets an 'Onboarding overdue' task." E1 fallback (03-case-file.md section 1): no native timer can read Onboarding.overdueDate, so manualActivationRule keeps this Enabled until hr-backend's OnboardingOverdueScheduler starts it (CaseEngineClient.startPlanItem) once the overdue date has passed. Exited as soon as "Onboarding checklist" completes, since the overdue condition is then gone. Due date: mirrored on Spring's engine_task row (F01 D-22 pattern).]]></text>
+                </documentation>
+                <itemControl id="ic_onboarding_overdue">
+                    <manualActivationRule id="mar_onboarding_overdue">
+                        <condition id="mar_onboarding_overdue_cond">
+                            <body><![CDATA[true]]></body>
+                        </condition>
+                    </manualActivationRule>
+                </itemControl>
+                <exitCriterion id="xc_onboarding_overdue">
+                    <planItemOnPart id="op_onboarding_overdue_exit" sourceRef="pi_onboarding_checklist">
+                        <standardEvent>complete</standardEvent>
+                    </planItemOnPart>
+                </exitCriterion>
+                <extensionElements mustUnderstand="false">
+                    <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="onboardingoverdue.humantask"/>
+                </extensionElements>
+            </humanTask>
+        </stage>
+        <stage id="pi_stage_active_employment" name="Active employment" autoComplete="false">
+            <documentation textFormat="text/plain">
+                <text><![CDATA[FRD-00 section 3 stage 2: starts when onboarding is complete (milestone "Employee onboarded"), ends when offboarding starts (FRD-07 adds that exit). Holds the three cycles of FRD-03/04/05; FRD-02 only adds "Create development plan".]]></text>
+            </documentation>
+            <entryCriterion id="ec_stage_active_employment">
+                <planItemOnPart id="op_stage_active_employment" sourceRef="pi_employee_onboarded">
+                    <standardEvent>occur</standardEvent>
                 </planItemOnPart>
             </entryCriterion>
-        </milestone>
-        <humanTask id="pi_equipment_request" name="Equipment request" isBlocking="true" performerRef="cr_employeecase_ITAdmin">
+            <humanTask id="pi_create_development_plan" name="Create development plan" isBlocking="true" performerRef="cr_employeecase_Employee">
+                <documentation textFormat="text/plain">
+                    <text><![CDATA[Owner: Employee. FRD-02 section 2: when onboarding completes "The employee receives a 'Create development plan' task (FRD-04)". Active as soon as the stage starts. Completed by FRD-04's development plan screens (F05).]]></text>
+                </documentation>
+                <extensionElements mustUnderstand="false">
+                    <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="createdevelopmentplan.humantask"/>
+                </extensionElements>
+            </humanTask>
+        </stage>
+        <humanTask id="pi_probation_review" name="Probation review" isBlocking="true" performerRef="cr_employeecase_Manager">
             <documentation textFormat="text/plain">
-                <text><![CDATA[Owner: IT admin. Raised when HR sends the IT & equipment request (Onboarding.itRequestSent = true). Output sets Onboarding.itSetupComplete, computed by Spring from checklist_item.
-
-No entryCriterion here (removed 2026-10-16, Wave 1): a caseFileItemOnPart listening for an
-"update" transition on "Onboarding", gated by an ifPart on itRequestSent == true, looked right
-and was reported "verified live" on 2026-10-15, but that verification happened to be the FIRST
-update ever made to "Onboarding" in that test case. Confirmed live against the real engine
-(GET /cases/{id}/history/events, reproduced across a full engine process restart, not a
-transient hiccup): this onPart is evaluated only on the first-ever "Update" transition of a
-case-file item; every later update is logged by the engine as "Adding delayed event Update to
-myself" and never actually re-evaluated. In the real flow "Onboarding" is updated repeatedly
-before itRequestSent ever becomes true (checklist ticking updates mandatoryItemsDone first), so
-the onPart always exhausts itself on the wrong update and this task never activated. Plan-item
-onParts (e.g. "Remaining setup"'s, below) don't share this failure mode — a human task's own
-"complete" transition only happens once, same as "Employee onboarded"'s milestone sentry above,
-both of which fire reliably. OnboardingService.sendItRequest now drives this plan item directly
-via CaseEngineClient.startPlanItem (POST /cases/{id}/planitems/{id}/start) right after setting
-Onboarding.itRequestSent = true, instead of relying on a sentry confirmed broken for this shape
-of case-file item in this engine version (1.1.35).
-
-manualActivationRule = true (added 2026-10-19): with no entryCriterion and no manual activation,
-CMMN activates this task the moment the case plan starts, so IT would see it before HR ever sent
-the request and Spring's later "start" call would hit an already-Active item. With the rule it
-waits in Enabled until OnboardingService.sendItRequest starts it.
-
-Due date: Onboarding.itReadyBy, the HR-entered "ready by" date (F01 spec section 8), written into
-the case file by sendItRequest in the same update that sets itRequestSent.]]></text>
+                <text><![CDATA[Owner: Manager. FRD-02 section 2: "14 days before probation ends (configurable), the manager receives a 'Probation review' task." Case-plan level, not inside "Active employment", so a late onboarding can never block a review that is due. E1 fallback (03-case-file.md section 1): Spring writes Probation {reviewId, reviewDate} and its scheduler starts this item (manualActivationRule) once reviewDate has passed. Output: Probation.outcome (CONFIRM / END).]]></text>
             </documentation>
-            <itemControl id="ic_equipment_request">
-                <manualActivationRule id="mar_equipment_request">
-                    <condition id="mar_equipment_request_cond">
+            <itemControl id="ic_probation_review">
+                <manualActivationRule id="mar_probation_review">
+                    <condition id="mar_probation_review_cond">
                         <body><![CDATA[true]]></body>
                     </condition>
                 </manualActivationRule>
             </itemControl>
-            <outputs id="out_equipment_request_itSetupComplete" name="Onboarding.itSetupComplete" bindingRef="Onboarding"/>
+            <outputs id="out_probation_review_outcome" name="Probation.outcome" bindingRef="Probation"/>
             <extensionElements mustUnderstand="false">
-                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="equipmentrequest.humantask">
-                    <parameterMapping id="pm_equipment_request_out_itSetupComplete" sourceRef="itSetupComplete__eq001" targetRef="out_equipment_request_itSetupComplete">
-                        <transformation id="pm_equipment_request_out_itSetupComplete_t">
-                            <body><![CDATA[{'itSetupComplete':itSetupComplete}]]></body>
+                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="probationreview.humantask">
+                    <parameterMapping id="pm_probation_review_out_outcome" sourceRef="outcome__pr001" targetRef="out_probation_review_outcome">
+                        <transformation id="pm_probation_review_out_outcome_t">
+                            <body><![CDATA[{'outcome':outcome}]]></body>
                         </transformation>
                     </parameterMapping>
-                    <duedate id="dd_equipment_request" contextRef="Onboarding">
-                        <condition id="dd_equipment_request_cond">
-                            <body><![CDATA[Onboarding.itReadyBy == null ? null : (T(java.time.LocalDate).parse(Onboarding.itReadyBy).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
-                        </condition>
-                    </duedate>
                 </cafienne:implementation>
             </extensionElements>
         </humanTask>
-        <humanTask id="pi_remaining_setup" name="Remaining setup" isBlocking="true" performerRef="cr_employeecase_ITAdmin">
+        <humanTask id="pi_approve_end_of_employment" name="Approve end of employment" isBlocking="true" performerRef="cr_employeecase_HR">
             <documentation textFormat="text/plain">
-                <text><![CDATA[Owner: IT admin. Raised only when "Equipment request" completes and IT work is still left (Onboarding.itSetupComplete != true), per F01 D-18. No case-file output.]]></text>
+                <text><![CDATA[Owner: HR. ONB-08: "If probation ends with 'End employment', HR must approve before offboarding starts." Raised when "Probation review" completes with Probation.outcome == 'END'. Output: Probation.hrDecision (APPROVED / REJECTED).]]></text>
             </documentation>
-            <entryCriterion id="ec_remaining_setup">
-                <ifPart contextRef="Onboarding">
+            <entryCriterion id="ec_approve_end_of_employment">
+                <ifPart contextRef="Probation">
                     <condition>
-                        <body><![CDATA[Onboarding?.itSetupComplete != true]]></body>
+                        <body><![CDATA[Probation?.outcome == 'END']]></body>
                     </condition>
                 </ifPart>
-                <planItemOnPart id="op_remaining_setup" sourceRef="pi_equipment_request">
+                <planItemOnPart id="op_approve_end_of_employment" sourceRef="pi_probation_review">
                     <standardEvent>complete</standardEvent>
                 </planItemOnPart>
             </entryCriterion>
+            <outputs id="out_approve_end_hrDecision" name="Probation.hrDecision" bindingRef="Probation"/>
             <extensionElements mustUnderstand="false">
-                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="remainingsetup.humantask">
-                    <duedate id="dd_remaining_setup" contextRef="Onboarding">
-                        <condition id="dd_remaining_setup_cond">
-                            <body><![CDATA[Onboarding.itReadyBy == null ? null : (T(java.time.LocalDate).parse(Onboarding.itReadyBy).atStartOfDay().toInstant(T(java.time.ZoneOffset).UTC)).toString()]]></body>
-                        </condition>
-                    </duedate>
+                <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="approveendofemployment.humantask">
+                    <parameterMapping id="pm_approve_end_out_hrDecision" sourceRef="hrDecision__ae001" targetRef="out_approve_end_hrDecision">
+                        <transformation id="pm_approve_end_out_hrDecision_t">
+                            <body><![CDATA[{'hrDecision':hrDecision}]]></body>
+                        </transformation>
+                    </parameterMapping>
                 </cafienne:implementation>
             </extensionElements>
         </humanTask>
+        <milestone id="pi_probation_passed" name="Probation passed">
+            <documentation textFormat="text/plain">
+                <text><![CDATA["Confirm employment" records the milestone "Probation passed" (FRD-02 section 2). Also raised when HR rejects an "End employment" outcome: the employee is confirmed (FRD-02 spec D-P5, user decision 2026-10-21).]]></text>
+            </documentation>
+            <entryCriterion id="ec_probation_passed_confirm">
+                <ifPart contextRef="Probation">
+                    <condition>
+                        <body><![CDATA[Probation?.outcome == 'CONFIRM']]></body>
+                    </condition>
+                </ifPart>
+                <planItemOnPart id="op_probation_passed_confirm" sourceRef="pi_probation_review">
+                    <standardEvent>complete</standardEvent>
+                </planItemOnPart>
+            </entryCriterion>
+            <entryCriterion id="ec_probation_passed_rejected">
+                <ifPart contextRef="Probation">
+                    <condition>
+                        <body><![CDATA[Probation?.hrDecision == 'REJECTED']]></body>
+                    </condition>
+                </ifPart>
+                <planItemOnPart id="op_probation_passed_rejected" sourceRef="pi_approve_end_of_employment">
+                    <standardEvent>complete</standardEvent>
+                </planItemOnPart>
+            </entryCriterion>
+        </milestone>
     </casePlanModel>
     <caseRoles caseTeamRef="employeecase.caseteam"/>
     <input id="in_Employee" name="Employee" bindingRef="Employee"/>
     <input id="in_Onboarding" name="Onboarding" bindingRef="Onboarding"/>
+    <input id="in_Probation" name="Probation" bindingRef="Probation"/>
 </case>

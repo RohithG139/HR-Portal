@@ -16,7 +16,7 @@
 
 import type { ReactElement } from 'react'
 import type { ChecklistSectionDto, ChecklistItemDto } from '../../api/onboarding'
-import { formatDate } from '../../lib/date'
+import { dueDateColourClass, formatDate } from '../../lib/date'
 import { Badge } from '../Badge/Badge'
 
 interface ChecklistProps {
@@ -43,22 +43,6 @@ const ownerLabels: Record<string, string> = {
   IT_ADMIN: 'IT admin',
   MANAGER: 'Manager',
   EMPLOYEE: 'Employee',
-}
-
-/**
- * Due-date colour class. The backend already computed dueState for engine tasks;
- * for checklist items we compute it client-side from the ISO dueDate string
- * only for display colour — not for business logic (R-ARC-1).
- */
-function dueDateClass(isoDate: string): string {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const due = new Date(isoDate)
-  const diffMs = due.getTime() - today.getTime()
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays < 0) return 'text-red-600' // overdue
-  if (diffDays <= 3) return 'text-orange-500' // due soon
-  return 'text-gray-500'
 }
 
 /** One checklist item row. */
@@ -113,7 +97,7 @@ function ChecklistItemRow({
         )}
         <span className="ml-2 text-xs text-gray-400">{ownerLabels[item.ownerRole] ?? item.ownerRole}</span>
         {item.dueDate !== '' && item.dueDate !== null && (
-          <span className={`ml-2 text-xs ${dueDateClass(item.dueDate)}`}>
+          <span className={`ml-2 text-xs ${isDone ? 'text-gray-400' : dueDateColourClass(item.dueDate)}`}>
             {formatDate(item.dueDate)}
           </span>
         )}

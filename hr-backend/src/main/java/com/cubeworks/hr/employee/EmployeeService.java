@@ -25,6 +25,7 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -64,6 +65,7 @@ public class EmployeeService {
     private final AssetRepository assetRepository;
     private final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient;
     private final com.cubeworks.hr.settings.SettingRepository settingRepository;
+    private final com.cubeworks.hr.onboarding.OnboardingService onboardingService;
 
     /**
      * Constructor injection (R-CODE-1).
@@ -78,7 +80,8 @@ public class EmployeeService {
                            final com.cubeworks.hr.common.outbox.EmailOutboxService emailOutboxService,
                            final AssetRepository assetRepository,
                            final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient,
-                           final com.cubeworks.hr.settings.SettingRepository settingRepository) {
+                           final com.cubeworks.hr.settings.SettingRepository settingRepository,
+                           final com.cubeworks.hr.onboarding.OnboardingService onboardingService) {
         this.employeeRepository = employeeRepository;
         this.draftRepository = draftRepository;
         this.contractRepository = contractRepository;
@@ -90,6 +93,7 @@ public class EmployeeService {
         this.assetRepository = assetRepository;
         this.keycloakAdminClient = keycloakAdminClient;
         this.settingRepository = settingRepository;
+        this.onboardingService = onboardingService;
     }
 
     /**
@@ -178,9 +182,16 @@ public class EmployeeService {
                 .map(this::toListItem)
                 .collect(Collectors.toList());
 
-        // If HR, append draft rows
-        if (caller.getAppRole() == AppRole.HR) {
+        // If HR, append draft rows: on the first page only (not repeated on every page), matching
+        // the search text like employee rows; hidden under a stage/department/manager filter,
+        // since drafts have none of those
+        final String needle = q != null && !q.isBlank() ? q.trim().toLowerCase() : null;
+        if (caller.getAppRole() == AppRole.HR && page == 0 && stage == null
+                && departmentId == null && managerId == null) {
             final List<EmployeeListItemDto> drafts = draftRepository.findAll().stream()
+                    .filter(d -> needle == null
+                            || (Objects.toString(d.getFirstName(), "") + " "
+                                + Objects.toString(d.getLastName(), "")).toLowerCase().contains(needle))
                     .map(d -> new EmployeeListItemDto(
                             null, d.getId(), d.getFirstName(), d.getLastName(),
                             null, null, null, "DRAFT", null, null, true, null, null))
@@ -396,6 +407,9 @@ public class EmployeeService {
 
         auditLogService.record(emp, "EMPLOYEE", emp.getId(), "UPDATE_MY_PROFILE",
                 caller, null, null);
+
+        // FRD-02 §4.5 / spec S10: saving a complete own profile ticks the onboarding PROFILE item
+        onboardingService.tickProfileItemsOnProfileSaved(emp);
 
         return toProfile(emp);
     }

@@ -9,7 +9,11 @@ import com.cubeworks.hr.onboarding.ChecklistItem;
 import com.cubeworks.hr.onboarding.ChecklistItemRepository;
 import com.cubeworks.hr.onboarding.ChecklistItemStatus;
 import com.cubeworks.hr.onboarding.ChecklistPhase;
+import com.cubeworks.hr.onboarding.OnboardingRepository;
+import com.cubeworks.hr.onboarding.OnboardingService;
+import com.cubeworks.hr.onboarding.OnboardingStatus;
 import com.cubeworks.hr.settings.ChecklistSection;
+import com.cubeworks.hr.settings.ItemKind;
 import com.cubeworks.hr.settings.OwnerRole;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -41,6 +45,8 @@ public class AssetService {
     private final AuditLogService auditLogService;
     private final Clock clock;
     private final com.cubeworks.hr.security.SelfActionGuard selfActionGuard;
+    private final OnboardingRepository onboardingRepository;
+    private final OnboardingService onboardingService;
 
     /**
      * Constructor injection (R-CODE-1).
@@ -57,13 +63,17 @@ public class AssetService {
                         final ChecklistItemRepository checklistItemRepository,
                         final AuditLogService auditLogService,
                         final Clock clock,
-                        final com.cubeworks.hr.security.SelfActionGuard selfActionGuard) {
+                        final com.cubeworks.hr.security.SelfActionGuard selfActionGuard,
+                        final OnboardingRepository onboardingRepository,
+                        final OnboardingService onboardingService) {
         this.assetRepository = assetRepository;
         this.employeeRepository = employeeRepository;
         this.checklistItemRepository = checklistItemRepository;
         this.auditLogService = auditLogService;
         this.clock = clock;
         this.selfActionGuard = selfActionGuard;
+        this.onboardingRepository = onboardingRepository;
+        this.onboardingService = onboardingService;
     }
 
     // ── A21 Issue asset ────────────────────────────────────────────────────────
@@ -116,10 +126,9 @@ public class AssetService {
         asset.setUpdatedBy(caller.getId());
         final Asset saved = assetRepository.save(asset);
 
-        // ONB-06: tick the first open EQUIPMENT_ISSUED checklist item for this employee
-        // (The matching item is identified by section = EQUIPMENT_ISSUED, regardless of item type,
-        //  so a Laptop asset ticks the Laptop item, etc.)
-        tickMatchingChecklistItem(emp, AssetType.valueOf(request.assetType()), caller, now);
+        // ONB-06 / FRD-02 §4.4: link the asset to the matching open equipment item and tick it
+        // (checklist_item.asset_id, DONE) — matched by equipment kind/name, never "first open item"
+        tickMatchingChecklistItem(emp, saved, caller, now);
 
         // Audit log
         auditLogService.record(emp, "ASSET", saved.getId(), "ASSET_ISSUED", caller, null,
@@ -164,6 +173,12 @@ public class AssetService {
         asset.setUpdatedBy(caller.getId());
         assetRepository.save(asset);
 
+        // The equipment item this asset ticked is no longer fulfilled: reopen it while
+        // onboarding is still in progress (once COMPLETED, the checklist is frozen — D-15)
+        if (emp != null) {
+            reopenItemsLinkedTo(emp, asset, caller, now);
+        }
+
         auditLogService.record(emp, "ASSET", assetId, "ASSET_RETURNED", caller, before,
                 "{\"status\":\"IN_STORAGE\"}");
     }
@@ -183,33 +198,90 @@ public class AssetService {
      * @param caller    the user performing the issue (set as done_by)
      * @param now       current timestamp
      */
-    private void tickMatchingChecklistItem(final Employee emp, final AssetType assetType,
+    /**
+     * Words that identify a checklist item for each asset type, matched against the item name
+     * (template names such as "Laptop (MacBook Pro 14\")", "Test phone", and the A03 accessory
+     * values such as "KEYBOARD_MOUSE" / "Keyboard & mouse"). {@link AssetType#OTHER} matches
+     * nothing: there is no checklist item an "Other" asset could be said to fulfil.
+     */
+    private static List<String> keywordsFor(final AssetType type) {
+        return switch (type) {
+            case LAPTOP -> List.of("laptop");
+            case MONITOR -> List.of("monitor");
+            case PHONE -> List.of("phone");
+            case ACCESS_BADGE -> List.of("badge");
+            case DOCKING_STATION -> List.of("docking");
+            case HEADSET -> List.of("headset");
+            case KEYBOARD_MOUSE -> List.of("keyboard", "mouse");
+            case OTHER -> List.of();
+        };
+    }
+
+    private static boolean matches(final ChecklistItem item, final AssetType type) {
+        if (item.getName() == null) return false;
+        final String name = item.getName().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+        if (name.equals(type.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' '))) return true;
+        return keywordsFor(type).stream().anyMatch(name::contains);
+    }
+
+    private boolean onboardingInProgress(final Employee emp) {
+        return onboardingRepository.findByEmployeeId(emp.getId())
+                .map(o -> o.getStatus() != OnboardingStatus.COMPLETED)
+                .orElse(false);
+    }
+
+    private void tickMatchingChecklistItem(final Employee emp, final Asset asset,
                                             final Employee caller, final OffsetDateTime now) {
-        // Look for open EQUIPMENT_ISSUED items; tick the best match
-        final List<ChecklistItem> equipmentItems = checklistItemRepository
+        if (!onboardingInProgress(emp)) return;
+        // Open, not-yet-linked IT equipment items (kind EQUIPMENT, or in the Equipment issued section)
+        final ChecklistItem target = checklistItemRepository
                 .findOpenByOwnerRole(emp.getId(), ChecklistPhase.ONBOARDING, OwnerRole.IT_ADMIN)
                 .stream()
-                .filter(i -> i.getSection() == ChecklistSection.EQUIPMENT_ISSUED)
-                .toList();
-
-        if (equipmentItems.isEmpty()) {
-            return; // No items to tick — asset still issued
+                .filter(i -> i.getItemKind() == ItemKind.EQUIPMENT
+                        || i.getSection() == ChecklistSection.EQUIPMENT_ISSUED)
+                .filter(i -> i.getAsset() == null)
+                .filter(i -> matches(i, asset.getAssetType()))
+                .findFirst()
+                .orElse(null);
+        if (target == null) {
+            return; // nothing on the checklist for this kind of equipment — the asset is still issued
         }
 
-        // Prefer an item whose name loosely matches the asset type
-        final String typeName = assetType.name();
-        ChecklistItem target = equipmentItems.stream()
-                .filter(i -> i.getName() != null
-                        && i.getName().toUpperCase().contains(typeName.replace("_", " ").toUpperCase().split(" ")[0]))
-                .findFirst()
-                .orElse(equipmentItems.get(0)); // fall back to first open item
-
+        target.setAsset(asset);
         target.setStatus(ChecklistItemStatus.DONE);
         target.setDoneAt(now);
         target.setDoneBy(caller);
         target.setUpdatedAt(now);
         target.setUpdatedBy(caller.getId());
         checklistItemRepository.save(target);
+        auditLogService.record(emp, "checklist_item", target.getId(), "TICK_ITEM", caller,
+                "{\"status\":\"OPEN\"}", "{\"status\":\"DONE\",\"assetId\":" + asset.getId() + "}",
+                "asset recorded");
+        onboardingService.refreshMandatoryItemsDone(emp);
+    }
+
+    private void reopenItemsLinkedTo(final Employee emp, final Asset asset,
+                                      final Employee caller, final OffsetDateTime now) {
+        final List<ChecklistItem> linked = checklistItemRepository.findByAssetId(asset.getId());
+        if (linked.isEmpty()) return;
+        final boolean inProgress = onboardingInProgress(emp);
+        for (final ChecklistItem item : linked) {
+            item.setAsset(null);
+            if (inProgress && item.getStatus() == ChecklistItemStatus.DONE) {
+                item.setStatus(ChecklistItemStatus.OPEN);
+                item.setDoneAt(null);
+                item.setDoneBy(null);
+                auditLogService.record(emp, "checklist_item", item.getId(), "UNTICK_ITEM", caller,
+                        "{\"status\":\"DONE\",\"assetId\":" + asset.getId() + "}",
+                        "{\"status\":\"OPEN\"}", "asset removed");
+            }
+            item.setUpdatedAt(now);
+            item.setUpdatedBy(caller.getId());
+            checklistItemRepository.save(item);
+        }
+        if (inProgress) {
+            onboardingService.refreshMandatoryItemsDone(emp);
+        }
     }
 
     // ── DTOs ───────────────────────────────────────────────────────────────────

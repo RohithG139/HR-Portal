@@ -16,6 +16,7 @@ import { useMutation } from '@tanstack/react-query'
 import { addAsset } from '../../api/assets'
 import { ApiResponseError } from '../../api/types'
 import { Modal, Field, useToast } from '../../components/index'
+import { toIsoDateOrEmpty } from '../../lib/date'
 
 interface AddEquipmentModalProps {
   isOpen: boolean
@@ -47,13 +48,6 @@ const ASSET_TYPE_OPTIONS = [
   { value: 'OTHER', label: 'Other' },
 ]
 
-function displayToIso(display: string): string {
-  if (display === '') return ''
-  const [d, m, y] = display.split('-')
-  if (d === undefined || m === undefined || y === undefined) return ''
-  return `${y}-${m}-${d}`
-}
-
 /** Add equipment modal (S5, m-add-asset). */
 export function AddEquipmentModal({ isOpen, onClose, onSaved, employeeId }: AddEquipmentModalProps): ReactElement {
   const { showToast } = useToast()
@@ -68,7 +62,7 @@ export function AddEquipmentModal({ isOpen, onClose, onSaved, employeeId }: AddE
         assetNumber: form.assetNumber,
         serialNumber: form.serialNumber || null,
         issuedToEmployeeId: employeeId,
-        issueDate: displayToIso(form.issueDate),
+        issueDate: toIsoDateOrEmpty(form.issueDate),
       }),
     onSuccess: () => {
       showToast('Equipment added.')

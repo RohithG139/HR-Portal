@@ -221,3 +221,43 @@ describe('EmployeesListPage — HR variant (AC-W08)', () => {
     expect(screen.queryByText('Read-only')).toBeNull()
   })
 })
+
+describe('EmployeesListPage — Onboarding-stage row (FRD-02 §3 Screen 2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRole = 'HR'
+    vi.mocked(employeesApi.listEmployees).mockResolvedValue({
+      items: [
+        {
+          id: 42,
+          draftId: null,
+          firstName: 'Jesse',
+          lastName: 'Willems',
+          jobTitle: 'Developer',
+          department: 'Development',
+          managerName: 'Mark Smit',
+          stage: 'ONBOARDING',
+          employeeCode: 'E-0042',
+          accountStatus: 'INVITED',
+          draft: false,
+          email: null,
+          assetCount: 0,
+        },
+      ],
+      totalElements: 1,
+      totalPages: 1,
+      page: 0,
+      size: 20,
+    })
+  })
+
+  it('"View" opens the onboarding wizard, not the employee record', async () => {
+    render(<EmployeesListPage />, { wrapper: Wrapper })
+
+    await waitFor(() => {
+      expect(screen.getByText('Jesse Willems')).toBeTruthy()
+    })
+    expect(screen.getByRole('link', { name: /view/i }).getAttribute('href'))
+      .toBe('/employees/42/onboarding?step=0')
+  })
+})

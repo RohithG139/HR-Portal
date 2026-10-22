@@ -1,0 +1,23 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="ApproveEndOfEmployment" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[HR approves or rejects the manager's "End employment" probation outcome (ONB-08, FRD-02 Screen 13). Output bound to Probation.hrDecision. APPROVED: Spring records employee_exit (PROBATION_NOT_PASSED, SYSTEM) and offboarding starts (FRD-07). REJECTED: the employee is confirmed — "Probation passed" is raised (FRD-02 spec D-P5, user decision 2026-10-21).]]></text>
+        </documentation>
+        <output id="hrDecision__ae001" name="hrDecision" typeRef="string"/>
+        <task-model>{
+  "schema": {
+    "title": "Approve end of employment",
+    "type": "object",
+    "required": ["hrDecision"],
+    "properties": {
+      "hrDecision": {
+        "type": "string",
+        "title": "Decision",
+        "enum": ["APPROVED", "REJECTED"]
+      }
+    }
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

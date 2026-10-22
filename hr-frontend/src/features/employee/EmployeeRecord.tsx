@@ -94,6 +94,16 @@ export function EmployeeRecord(): ReactElement {
 
         {/* Header actions — HR only (D-W8: Initiate exit / Start PIP / Assign project are
             built by their owning features; only Transfer manager is built here per W6) */}
+        <div className="flex items-center gap-3">
+        {/* While the employee is still onboarding, HR can go back to the onboarding wizard */}
+        {isHR && overview?.stage === 'ONBOARDING' && (
+          <Link
+            to={`/employees/${employeeId}/onboarding?step=0`}
+            className="px-4 py-2 text-sm font-medium rounded-md border border-blue-600 text-blue-700 hover:bg-blue-50 min-h-[44px] inline-flex items-center focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+          >
+            Open onboarding
+          </Link>
+        )}
         {showTransferManager && (
           <button
             type="button"
@@ -108,6 +118,7 @@ export function EmployeeRecord(): ReactElement {
             Transfer manager
           </button>
         )}
+        </div>
       </div>
 
       {/* Tab bar — accessible ARIA tab pattern */}

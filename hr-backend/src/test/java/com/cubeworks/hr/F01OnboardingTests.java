@@ -682,7 +682,7 @@ class F01OnboardingTests extends AbstractApiTest {
         long itemId = jdbc.queryForObject("""
                 INSERT INTO hr.checklist_item (
                     employee_id, phase, name, section, owner_role, item_kind, mandatory, due_date, status
-                ) VALUES (?, 'ONBOARDING', 'Confirm equipment received', 'EQUIPMENT_ISSUED', 'EMPLOYEE', 'EQUIPMENT', false, '2027-01-05', 'OPEN')
+                ) VALUES (?, 'ONBOARDING', 'Confirm equipment received', 'EQUIPMENT_ISSUED', 'EMPLOYEE', 'EQUIPMENT_CONFIRM', false, '2027-01-05', 'OPEN')
                 RETURNING id
                 """, Long.class, empId);
 

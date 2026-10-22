@@ -1,30 +1,82 @@
 <CMMNDI xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
     <CMMNDiagram>
         <CMMNShape cmmnElementRef="cm_employeecase.case_employeecase_0">
-            <Bounds x="20" y="10" width="620" height="340"/>
+            <Bounds x="20" y="10" width="1220" height="640"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="pi_release_onboarding_emails">
-            <Bounds x="250" y="150" width="140" height="40"/>
+            <Bounds x="60" y="50" width="140" height="60"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_stage_onboarding">
+            <Bounds x="40" y="140" width="700" height="300"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="pi_onboarding_checklist">
-            <Bounds x="80" y="70" width="140" height="80"/>
+            <Bounds x="80" y="190" width="140" height="80"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="pi_employee_onboarded">
-            <Bounds x="380" y="90" width="120" height="40"/>
+            <Bounds x="320" y="210" width="120" height="40"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="ec_employee_onboarded">
-            <Bounds x="374" y="100" width="12" height="20"/>
+            <Bounds x="314" y="220" width="12" height="20"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="pi_equipment_request">
-            <Bounds x="80" y="220" width="140" height="80"/>
+            <Bounds x="80" y="320" width="140" height="80"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="pi_remaining_setup">
-            <Bounds x="380" y="220" width="140" height="80"/>
+            <Bounds x="320" y="320" width="140" height="80"/>
         </CMMNShape>
         <CMMNShape cmmnElementRef="ec_remaining_setup">
-            <Bounds x="374" y="250" width="12" height="20"/>
+            <Bounds x="314" y="350" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_onboarding_overdue">
+            <Bounds x="560" y="190" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="xc_onboarding_overdue">
+            <Bounds x="554" y="220" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_stage_active_employment">
+            <Bounds x="800" y="140" width="400" height="300"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="ec_stage_active_employment">
+            <Bounds x="794" y="220" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_create_development_plan">
+            <Bounds x="930" y="190" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_probation_review">
+            <Bounds x="80" y="510" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_approve_end_of_employment">
+            <Bounds x="360" y="510" width="140" height="80"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="ec_approve_end_of_employment">
+            <Bounds x="354" y="540" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="pi_probation_passed">
+            <Bounds x="640" y="530" width="120" height="40"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="ec_probation_passed_confirm">
+            <Bounds x="634" y="530" width="12" height="20"/>
+        </CMMNShape>
+        <CMMNShape cmmnElementRef="ec_probation_passed_rejected">
+            <Bounds x="694" y="564" width="12" height="20"/>
         </CMMNShape>
         <CMMNEdge sourceCMMNElementRef="pi_onboarding_checklist" targetCMMNElementRef="ec_employee_onboarded"/>
         <CMMNEdge sourceCMMNElementRef="pi_equipment_request" targetCMMNElementRef="ec_remaining_setup"/>
+        <CMMNEdge sourceCMMNElementRef="pi_onboarding_checklist" targetCMMNElementRef="xc_onboarding_overdue">
+            <waypoint x="150" y="170"/>
+            <waypoint x="530" y="170"/>
+            <waypoint x="530" y="230"/>
+        </CMMNEdge>
+        <CMMNEdge sourceCMMNElementRef="pi_employee_onboarded" targetCMMNElementRef="ec_stage_active_employment"/>
+        <CMMNEdge sourceCMMNElementRef="pi_probation_review" targetCMMNElementRef="ec_approve_end_of_employment"/>
+        <CMMNEdge sourceCMMNElementRef="pi_probation_review" targetCMMNElementRef="ec_probation_passed_confirm">
+            <waypoint x="150" y="490"/>
+            <waypoint x="610" y="490"/>
+            <waypoint x="610" y="540"/>
+        </CMMNEdge>
+        <CMMNEdge sourceCMMNElementRef="pi_approve_end_of_employment" targetCMMNElementRef="ec_probation_passed_rejected">
+            <waypoint x="430" y="620"/>
+            <waypoint x="700" y="620"/>
+        </CMMNEdge>
     </CMMNDiagram>
 </CMMNDI>

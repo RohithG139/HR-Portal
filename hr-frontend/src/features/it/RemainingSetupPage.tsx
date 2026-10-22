@@ -18,8 +18,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getChecklist, tickItem, untickItem, completeItSetup } from '../../api/onboarding'
 import { getMyTasks } from '../../api/tasks'
 import { ApiResponseError } from '../../api/types'
-import { Card, useToast } from '../../components/index'
+import type { UndoWindowResult } from '../../api/onboarding'
+import { Card, UndoBanner, useToast } from '../../components/index'
 import { formatDate } from '../../lib/date'
+
+/** The server's message when the error carries one (409 conflicts do), else the fallback. */
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiResponseError && 'message' in err.body ? err.body.message : fallback
+}
 
 /**
  * RemainingSetupPage is the IT admin's second task after issuing equipment.
@@ -35,6 +41,8 @@ export function RemainingSetupPage(): ReactElement {
   const navigate = useNavigate()
   const { showToast } = useToast()
   const [tickingId, setTickingId] = useState<number | null>(null)
+  // Pending completion inside the undo window (R-API-6): stay on the page until it ends
+  const [pending, setPending] = useState<UndoWindowResult | null>(null)
 
   // Load IT admin's own checklist items for this employee (owner=IT_ADMIN)
   const { data: checklist, isLoading } = useQuery({
@@ -61,7 +69,7 @@ export function RemainingSetupPage(): ReactElement {
     },
     onError: (err: unknown) => {
       setTickingId(null)
-      showToast(err instanceof ApiResponseError ? err.body.message : 'Failed to tick item.', 'error')
+      showToast(errorMessage(err, 'Failed to tick item.'), 'error')
     },
   })
 
@@ -76,18 +84,16 @@ export function RemainingSetupPage(): ReactElement {
     },
     onError: (err: unknown) => {
       setTickingId(null)
-      showToast(err instanceof ApiResponseError ? err.body.message : 'Failed to untick item.', 'error')
+      showToast(errorMessage(err, 'Failed to untick item.'), 'error')
     },
   })
 
   const completeMutation = useMutation({
     mutationFn: () => completeItSetup(employeeId),
     onSuccess: (result) => {
-      showToast(`Setup marked done. Undo available until ${result.undoUntil}.`)
+      // Stay here until the undo window ends (UndoBanner.onExpired), then back to My Tasks
+      setPending(result)
       void queryClient.invalidateQueries({ queryKey: ['checklist-it', employeeId] })
-      void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
-      // Task is finished: back to the task list (the toast is global, so it stays)
-      void navigate('/my-tasks')
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'MANDATORY_ITEMS_OPEN') {
@@ -122,6 +128,22 @@ export function RemainingSetupPage(): ReactElement {
       <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
         Remaining setup
       </h1>
+
+      {pending !== null && (
+        <UndoBanner
+          taskId={pending.taskId}
+          undoUntil={pending.undoUntil}
+          message="Setup marked done."
+          onUndone={() => {
+            setPending(null)
+            void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
+          }}
+          onExpired={() => {
+            void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
+            void navigate('/my-tasks')
+          }}
+        />
+      )}
 
       {/* Progress summary */}
       <p className="text-sm text-gray-500">
@@ -203,7 +225,7 @@ export function RemainingSetupPage(): ReactElement {
           <button
             type="button"
             onClick={() => completeMutation.mutate()}
-            disabled={!canComplete || completeMutation.isPending}
+            disabled={!canComplete || completeMutation.isPending || pending !== null}
             aria-disabled={!canComplete}
             title={!canComplete ? 'Tick all mandatory items first' : undefined}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

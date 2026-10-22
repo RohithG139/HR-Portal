@@ -210,8 +210,8 @@ All endpoints below require the HR role (§2); omitted from each row for brevity
 | C08 | `GET /api/settings/checklist-templates/{id}` | full detail incl. items, for the admin tab (distinct from F01's read-only `GET /api/checklist-templates/{id}/preview`, A06, which stays where it is — it is not a settings-management endpoint) |
 | C09 | `POST /api/settings/checklist-templates` `{name,kind,jobTitleId?,copiedFromId?}` | `201 {id}` / `400` / `409 DUPLICATE_NAME`; `copiedFromId` → `checklist_template.copied_from_id` |
 | C10 | `POST /api/settings/checklist-templates/{id}/archive` | `200` (ADM-04) |
-| C11 | `POST /api/settings/checklist-templates/{id}/items` `{name,section,ownerRole,mandatory,dueOffsetDays}` | `201 item` / `400` |
-| C12 | `PUT /api/settings/checklist-templates/{id}/items/{itemId}` `{name,section,ownerRole,mandatory,dueOffsetDays}` | `200` / `400`; nested under the template, per FRD §4.3 (was a flat `/api/checklist-template-items/{itemId}` in the pre-v1.2 draft) |
+| C11 | `POST /api/settings/checklist-templates/{id}/items` `{name,section,ownerRole,mandatory,dueOffsetDays,itemKind?,policyDocumentId?}` | `201 item` / `400`. `itemKind` (optional, default GENERIC) = `checklist_template_item.item_kind`; `policyDocumentId` (a `POLICY` document uploaded via F01 A07) is kept only for `POLICY_ACK` (DB CHECK) — added 2026-10-21, see F01 spec §12 D-24(g) |
+| C12 | `PUT /api/settings/checklist-templates/{id}/items/{itemId}` `{name,section,ownerRole,mandatory,dueOffsetDays,itemKind?,policyDocumentId?}` | `200` / `400`; nested under the template, per FRD §4.3 (was a flat `/api/checklist-template-items/{itemId}` in the pre-v1.2 draft); `itemKind`/`policyDocumentId` as C11 |
 | C13 | `DELETE /api/settings/checklist-templates/{id}/items/{itemId}` | `204` / `409 ITEM_IN_USE` (§12 D-02) |
 
 ### Appraisal forms (FRD-08 §4.4)

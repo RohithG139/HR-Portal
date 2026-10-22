@@ -1,0 +1,23 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="ProbationReview" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[Manager rates quality of work, collaboration and learning, writes a summary and chooses an outcome (FRD-02 section 2 "Probation review", Screen 12). Ratings and summary stay in hr_app (review, review_answer — R-ARC-3); only the outcome enum is this task's output, bound to Probation.outcome. CONFIRM raises "Probation passed"; END raises HR's "Approve end of employment" (ONB-08).]]></text>
+        </documentation>
+        <output id="outcome__pr001" name="outcome" typeRef="string"/>
+        <task-model>{
+  "schema": {
+    "title": "Probation review",
+    "type": "object",
+    "required": ["outcome"],
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "title": "Outcome",
+        "enum": ["CONFIRM", "END"]
+      }
+    }
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

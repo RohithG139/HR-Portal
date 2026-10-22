@@ -75,4 +75,5 @@ Probation decision · {employee name}             Reported by {manager name} · 
 ```
 
 - **[ASSUMPTION]**: button placement follows R-UI-1 (positive action green/right — here "Approve" since it's the one that proceeds; "Reject" red outline/left, matching the Cancel/Delete convention rather than the Archive one, since rejecting isn't an archive action). Not FRD-specified.
-- **[OPEN]**: what "Reject" actually does next (D-P5) — this screen cannot be finalized until that's answered, since the button may need a reason field, a redirect, or something else entirely depending on the answer.
+
+**Decided 2026-10-21 (user):** D-P4 = "same page + HR action bar" — S15 is the S14 layout above (title "Approve end of employment · {name}", ratings/summary/outcome read-only, Context panel) with the `[Reject] … [Approve]` bar at the bottom, shown only while the decision is pending; after a click the undo banner (G-03) replaces it. D-P5 = Reject confirms the employee (no reason field, no extra step). Route carries `?reviewId={id}`.

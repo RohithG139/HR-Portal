@@ -28,6 +28,7 @@ import type {
 import { listJobTitles } from '../../api/settingsDepartments'
 import type { JobTitleDto } from '../../api/settingsDepartments'
 import { Modal, Field, useToast } from '../../components/index'
+import { uploadDocument } from '../../api/documents'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
 import { CARD, CARD_TITLE_ROW, CARD_TITLE, ADD_BTN, SECONDARY_BTN, REMOVE_BTN, CloseIcon, SortHeader, sortRows, tabClass, UNSORTED } from './settingsUi'
@@ -59,6 +60,29 @@ const OWNER_OPTIONS = [
 ]
 
 const ALL_SECTIONS = [...ONBOARDING_SECTIONS, ...OFFBOARDING_SECTIONS]
+
+/**
+ * checklist_template_item.item_kind values (FRD-02 data model), split by template kind.
+ * The kind decides what completing the item does: POLICY_ACK opens the policy pop-up,
+ * PROFILE is ticked by saving My Profile, EQUIPMENT_CONFIRM opens "Confirm equipment",
+ * EQUIPMENT is ticked when IT records the matching asset (ONB-06).
+ */
+const ONBOARDING_KINDS = [
+  { value: 'GENERIC', label: 'Standard task' },
+  { value: 'POLICY_ACK', label: 'Policy acknowledgement' },
+  { value: 'PROFILE', label: 'Complete profile' },
+  { value: 'EQUIPMENT_CONFIRM', label: 'Confirm equipment received' },
+  { value: 'EQUIPMENT', label: 'Equipment' },
+  { value: 'ACCOUNT', label: 'Account' },
+]
+
+const OFFBOARDING_KINDS = [
+  { value: 'GENERIC', label: 'Standard task' },
+  { value: 'EQUIPMENT', label: 'Equipment' },
+  { value: 'ACCOUNT', label: 'Account' },
+  { value: 'EXIT_INTERVIEW', label: 'Exit interview' },
+  { value: 'ASSIGNMENTS_END', label: 'End assignments' },
+]
 
 /** DOCUMENTS_ADMIN → "Documents & admin". */
 function sectionLabel(value: string): string {
@@ -95,6 +119,8 @@ const EMPTY_ITEM: ChecklistTemplateItemRequest = {
   ownerRole: '',
   mandatory: true,
   dueOffsetDays: 0,
+  itemKind: 'GENERIC',
+  policyDocumentId: null,
 }
 
 function ItemModal({ isOpen, kind, templateId, editingItem, onClose, onSaved }: ItemModalProps): ReactElement {
@@ -107,13 +133,38 @@ function ItemModal({ isOpen, kind, templateId, editingItem, onClose, onSaved }: 
           ownerRole: editingItem.ownerRole,
           mandatory: editingItem.mandatory,
           dueOffsetDays: editingItem.dueOffsetDays,
+          itemKind: editingItem.itemKind,
+          policyDocumentId: editingItem.policyDocumentId,
         }
       : EMPTY_ITEM,
   )
+  const [policyFileName, setPolicyFileName] = useState('')
+  const [policyError, setPolicyError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handlePolicyFile = async (file: File | undefined): Promise<void> => {
+    if (file === undefined) return
+    setUploading(true)
+    setPolicyError(null)
+    try {
+      const { documentId } = await uploadDocument(file, 'POLICY')
+      setForm((f) => ({ ...f, policyDocumentId: documentId }))
+      setPolicyFileName(file.name)
+    } catch (err: unknown) {
+      if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED' && 'errors' in err.body) {
+        setPolicyError((err.body as ApiValidationError).errors[0]?.message ?? null)
+      } else {
+        showToast('Failed to upload the policy.', 'error')
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
   const [errors, setErrors] = useState<Partial<Record<keyof ChecklistTemplateItemRequest, string>>>({})
   const [saving, setSaving] = useState(false)
 
   const sectionOptions = kind === 'OFFBOARDING' ? OFFBOARDING_SECTIONS : ONBOARDING_SECTIONS
+  const kindOptions = kind === 'OFFBOARDING' ? OFFBOARDING_KINDS : ONBOARDING_KINDS
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof ChecklistTemplateItemRequest, string>> = {}
@@ -176,7 +227,7 @@ function ItemModal({ isOpen, kind, templateId, editingItem, onClose, onSaved }: 
           <button
             type="button"
             onClick={() => { void handleSave() }}
-            disabled={saving}
+            disabled={saving || uploading}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 disabled:opacity-60"
           >
             {saving ? 'Saving…' : 'Save'}
@@ -236,6 +287,44 @@ function ItemModal({ isOpen, kind, templateId, editingItem, onClose, onSaved }: 
           ]}
         />
       </div>
+      <Field
+        id="item-kind"
+        label="Type"
+        type="select"
+        value={form.itemKind ?? 'GENERIC'}
+        onChange={(v) => setForm((f) => ({
+          ...f,
+          itemKind: String(v),
+          // a policy document belongs only to a POLICY_ACK item (DB CHECK)
+          policyDocumentId: String(v) === 'POLICY_ACK' ? f.policyDocumentId : null,
+        }))}
+        options={kindOptions}
+        error={errors.itemKind}
+      />
+      {form.itemKind === 'POLICY_ACK' && (
+        <div>
+          <label htmlFor="item-policy" className="block text-sm font-medium text-gray-700 mb-1">
+            Policy (PDF)
+          </label>
+          <input
+            id="item-policy"
+            type="file"
+            accept="application/pdf"
+            disabled={uploading}
+            onChange={(e) => { void handlePolicyFile(e.target.files?.[0]) }}
+            className="block w-full text-sm text-gray-700 file:mr-3 file:px-3 file:py-2 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-sm min-h-[44px]"
+          />
+          {uploading && <p className="mt-1 text-xs text-gray-500">Uploading…</p>}
+          {!uploading && form.policyDocumentId !== null && form.policyDocumentId !== undefined && (
+            <p className="mt-1 text-xs text-green-700">
+              {policyFileName !== '' ? `Uploaded: ${policyFileName}` : 'A policy PDF is linked.'}
+            </p>
+          )}
+          {(policyError ?? errors.policyDocumentId) !== undefined && (policyError ?? errors.policyDocumentId) !== null && (
+            <p role="alert" className="mt-1 text-xs text-red-600">{policyError ?? errors.policyDocumentId}</p>
+          )}
+        </div>
+      )}
     </Modal>
   )
 }

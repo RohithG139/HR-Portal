@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { formatDate, parseDate } from './date'
+import { daysUntil, dueDateColourClass, formatDate, formatDateTime, parseDate, toDisplayDateOrEmpty, toIsoDateOrEmpty } from './date'
 
 // ---------------------------------------------------------------------------
 // formatDate — ISO → display
@@ -125,4 +125,46 @@ describe('formatDate / parseDate round-trip', () => {
       expect(formatDate(parseDate(display))).toBe(display)
     })
   }
+})
+
+// ---------------------------------------------------------------------------
+// Lenient conversions, due-date colours (R-UI-6) and date-time display
+// ---------------------------------------------------------------------------
+
+
+describe('toIsoDateOrEmpty / toDisplayDateOrEmpty', () => {
+  it('converts full dates and returns "" for partial input instead of throwing', () => {
+    expect(toIsoDateOrEmpty('21-10-2026')).toBe('2026-10-21')
+    expect(toIsoDateOrEmpty('21-10-20')).toBe('')
+    expect(toIsoDateOrEmpty('')).toBe('')
+    expect(toDisplayDateOrEmpty('2026-10-21')).toBe('21-10-2026')
+    expect(toDisplayDateOrEmpty('2026-10')).toBe('')
+  })
+})
+
+describe('daysUntil / dueDateColourClass', () => {
+  // 21-10-2026 at 23:30 local time — late in the day, where UTC parsing used to go wrong
+  const now = new Date(2026, 9, 21, 23, 30, 0)
+
+  it('reads yyyy-MM-dd as a local calendar date', () => {
+    expect(daysUntil('2026-10-21', now)).toBe(0)
+    expect(daysUntil('2026-10-20', now)).toBe(-1)
+    expect(daysUntil('2026-10-24', now)).toBe(3)
+    expect(daysUntil('not-a-date', now)).toBeNull()
+  })
+
+  it('due today is orange, not red; overdue is red; within 3 days orange; later grey', () => {
+    expect(dueDateColourClass('2026-10-21', now)).toBe('text-orange-500')
+    expect(dueDateColourClass('2026-10-20', now)).toBe('text-red-600')
+    expect(dueDateColourClass('2026-10-24', now)).toBe('text-orange-500')
+    expect(dueDateColourClass('2026-10-25', now)).toBe('text-gray-500')
+  })
+})
+
+describe('formatDateTime', () => {
+  it('shows an instant as local dd-mm-yyyy HH:mm:ss, never raw ISO', () => {
+    const local = new Date(2026, 9, 21, 9, 5, 7)
+    expect(formatDateTime(local.toISOString())).toBe('21-10-2026 09:05:07')
+    expect(formatDateTime('garbage')).toBe('')
+  })
 })

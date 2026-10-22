@@ -165,6 +165,19 @@ public class RealCaseEngineClient implements CaseEngineClient {
     }
 
     @Override
+    public void createCaseFileItem(final String caseId, final String item, final Map<String, Object> fields) {
+        restClient.post()
+                .uri(engineBaseUrl + "/cases/{caseId}/casefile/create/{item}", caseId, item)
+                .header("Authorization", "Bearer " + getAccessToken())
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(fields)
+                .retrieve()
+                .toBodilessEntity();
+
+        log.info("Created engine case file item caseId={} item={} fields={}", caseId, item, fields.keySet());
+    }
+
+    @Override
     public void completeTask(final String engineTaskId, final Map<String, Object> output) {
         restClient.post()
                 .uri(engineBaseUrl + "/tasks/{taskId}/complete", engineTaskId)

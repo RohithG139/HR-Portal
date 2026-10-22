@@ -19,5 +19,13 @@
                 <property id="sp_Onboarding_itReadyBy" name="itReadyBy" type="string" multiplicity="ZeroOrOne" format="date"/>
             </schema>
         </property>
+        <property id="sp_Probation" name="Probation" type="object" multiplicity="ZeroOrOne">
+            <schema id="sc_Probation" name="Probation">
+                <property id="sp_Probation_reviewId" name="reviewId" type="integer" multiplicity="ZeroOrOne"/>
+                <property id="sp_Probation_reviewDate" name="reviewDate" type="string" multiplicity="ZeroOrOne" format="date-time"/>
+                <property id="sp_Probation_outcome" name="outcome" type="string" multiplicity="ZeroOrOne"/>
+                <property id="sp_Probation_hrDecision" name="hrDecision" type="string" multiplicity="ZeroOrOne"/>
+            </schema>
+        </property>
     </schema>
 </type>

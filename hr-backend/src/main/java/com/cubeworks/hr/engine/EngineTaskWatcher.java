@@ -5,9 +5,12 @@ import com.cubeworks.hr.employee.EmployeeRepository;
 import com.cubeworks.hr.notification.TaskNotificationService;
 import com.cubeworks.hr.onboarding.Onboarding;
 import com.cubeworks.hr.onboarding.OnboardingRepository;
+import com.cubeworks.hr.onboarding.OnboardingService;
+import org.springframework.web.client.HttpClientErrorException;
 import com.cubeworks.hr.settings.OwnerRole;
 import com.cubeworks.hr.task.EngineTask;
 import com.cubeworks.hr.task.EngineTaskRepository;
+import com.cubeworks.hr.task.TaskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -65,6 +68,7 @@ public class EngineTaskWatcher {
     private final OnboardingRepository onboardingRepository;
     private final CaseEngineClient caseEngineClient;
     private final TaskNotificationService taskNotificationService;
+    private final OnboardingService onboardingService;
     private final Clock clock;
 
     public EngineTaskWatcher(final EngineTaskRepository engineTaskRepository,
@@ -72,7 +76,9 @@ public class EngineTaskWatcher {
                               final OnboardingRepository onboardingRepository,
                               final CaseEngineClient caseEngineClient,
                               final TaskNotificationService taskNotificationService,
+                              final OnboardingService onboardingService,
                               final Clock clock) {
+        this.onboardingService = onboardingService;
         this.engineTaskRepository = engineTaskRepository;
         this.employeeRepository = employeeRepository;
         this.onboardingRepository = onboardingRepository;
@@ -92,7 +98,15 @@ public class EngineTaskWatcher {
         openTasks.stream()
                 .map(t -> t.getEmployee().getEmployeeCode())
                 .distinct()
-                .forEach(this::reconcileCase);
+                .forEach(caseId -> {
+                    // One case's failure (engine error, optimistic-lock conflict) must not skip
+                    // the remaining cases this tick; it is retried on the next poll.
+                    try {
+                        reconcileCase(caseId);
+                    } catch (final Exception ex) {
+                        log.error("Task reconcile failed for caseId={}; retrying next poll", caseId, ex);
+                    }
+                });
     }
 
     /**
@@ -107,7 +121,19 @@ public class EngineTaskWatcher {
             return;
         }
 
-        final List<Map<String, Object>> engineTasks = caseEngineClient.findOpenTasks(caseId);
+        final List<Map<String, Object>> engineTasks;
+        try {
+            engineTasks = caseEngineClient.findOpenTasks(caseId);
+        } catch (final HttpClientErrorException.NotFound missingCase) {
+            // The case start never reached the engine (R-ARC-5: retry, never lose it silently).
+            onboardingService.restartMissingCase(caseId);
+            return;
+        }
+        if (!engineTasks.isEmpty() && employee.getCaseId() == null) {
+            // employee.case_id caches "the engine has this case"; the engine just confirmed it.
+            employee.setCaseId(caseId);
+            employeeRepository.save(employee);
+        }
         if (engineTasks.isEmpty()) {
             // Either the case isn't queryable yet (projection lag) or genuinely has no open
             // tasks right now — either way, nothing to reconcile this poll.
@@ -154,8 +180,14 @@ public class EngineTaskWatcher {
             final String dueDateStr = (String) engineTask.get("dueDate");
             newTask.setDueDate(dueDateStr != null && !dueDateStr.isBlank()
                     ? LocalDate.parse(dueDateStr) : LocalDate.now(clock));
-            newTask.setRelatedEntity("ONBOARDING");
-            newTask.setRelatedId(onboarding.getId());
+            if (TaskService.TASK_CREATE_DEVELOPMENT_PLAN.equals(taskName)) {
+                // FRD-04's development_plan row doesn't exist yet; F05 links it.
+                newTask.setRelatedEntity("DEVELOPMENT_PLAN");
+                newTask.setOwnerEmployee(employee);
+            } else {
+                newTask.setRelatedEntity("ONBOARDING");
+                newTask.setRelatedId(onboarding.getId());
+            }
             newTask.setCreatedAt(now);
             newTask.setUpdatedAt(now);
             newTask.setNotifiedAt(now);
@@ -184,6 +216,10 @@ public class EngineTaskWatcher {
         return switch (taskName) {
             case "Onboarding checklist" -> "HR";
             case "Equipment request", "Remaining setup" -> "IT_ADMIN";
+            // Raised by the engine when "Active employment" starts (FRD-02 §2, FRD-04 D-04-4).
+            // "Onboarding overdue", "Probation review" and "Approve end of employment" are
+            // always mirrored by Spring when it raises them, so only their ids are resolved here.
+            case TaskService.TASK_CREATE_DEVELOPMENT_PLAN -> "EMPLOYEE";
             default -> null;
         };
     }
@@ -193,6 +229,8 @@ public class EngineTaskWatcher {
         return switch (ownerRole) {
             case "HR" -> "/employees/" + employeeId + "/onboarding";
             case "IT_ADMIN" -> "/it/equipment-requests/" + employeeId;
+            // FRD-04 Screen 2 route (built by F05)
+            case "EMPLOYEE" -> "/me/development/plan";
             default -> null;
         };
     }

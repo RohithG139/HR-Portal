@@ -48,8 +48,8 @@ export function OnboardingWizard(): ReactElement {
   // (set on the Link in EmployeesListPage), not the URL, so this personal data
   // never lands in browser history or server access logs — it's simply absent
   // after a hard refresh, which only affects this prefill convenience, not
-  // correctness. See Step1Details' initialDraftId doc comment for why only
-  // these two fields carry over at all (no GET-by-id endpoint exists, D-23).
+  // correctness: Step1Details reads the whole saved draft back with
+  // A09a GET /api/onboarding-drafts/{id} (D-23).
   const draftState = location.state as { firstName?: string; lastName?: string } | null
   const initialDraftId = rawDraftId !== undefined && rawDraftId !== '' ? parseInt(rawDraftId, 10) : undefined
   const initialFirstName = draftState?.firstName

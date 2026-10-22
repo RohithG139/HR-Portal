@@ -65,6 +65,13 @@ public class NoOpCaseEngineClient implements CaseEngineClient {
      * @param output       the task completion output payload
      */
     @Override
+    public void createCaseFileItem(final String caseId, final String item,
+                                   final Map<String, Object> fields) {
+        log.info("[NoOpCaseEngineClient] createCaseFileItem caseId={} item={} fields={}",
+                caseId, item, fields);
+    }
+
+    @Override
     public void completeTask(final String engineTaskId, final Map<String, Object> output) {
         // Gate 2 stub — gate 3 sends a POST to the engine task-complete endpoint.
         log.info("[NoOpCaseEngineClient] completeTask engineTaskId={} output={}",

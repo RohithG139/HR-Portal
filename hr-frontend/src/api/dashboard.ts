@@ -23,6 +23,9 @@ export interface DashboardTaskDto {
   dueState: string
   /** Name of the employee the task is about, for "Task · Name" rows. */
   employeeName?: string | null
+  /** Employee code and related id, for the probation task routes (FRD-02 Screen 12/13). */
+  employeeCode?: string | null
+  relatedId?: number | null
 }
 
 /**

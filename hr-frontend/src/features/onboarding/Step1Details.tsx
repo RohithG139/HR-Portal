@@ -1,7 +1,7 @@
 /**
  * @component Step1Details
- * @description S2 — Step 1: Employee details form. Handles draft save and full submission.
- * Validation messages are exact copies from spec §5 (R-SRC-3).
+ * @description S2 — Step 1: Employee details form. Handles draft save/resume and full submission.
+ * Validation messages are exact copies from spec §5 (R-SRC-3), see step1Validation.ts.
  * @props employeeId - number|null - existing employee (null = new)
  * @props onCreated - function - called with new employeeId after successful creation
  * @props onContinue - function - called when navigating to step 2 for existing employee
@@ -9,116 +9,61 @@
  * <Step1Details employeeId={null} onCreated={(id) => navigate(`/onboarding/${id}`)} onContinue={...} />
  */
 
-import { useState, useEffect } from 'react'
-import type { ReactElement } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import type { ChangeEvent, ReactElement } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createOnboarding, createDraft, updateDraft, updateOnboardingDetails,
-  getOnboarding, getTemplatePreview,
+  getOnboarding, getTemplatePreview, getDraft,
 } from '../../api/onboarding'
+import { uploadDocument } from '../../api/documents'
 import { getOnboardingLookups } from '../../api/lookups'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
 import { Card, Field, useToast } from '../../components/index'
 import { formatDate, parseDate } from '../../lib/date'
-import { isValidEmail, isValidPhone } from '../../lib/validation'
+import { EMPTY_STEP1_FORM, formFromDraft, validateStep1 } from './step1Validation'
+import type { Step1Errors, Step1FormState } from './step1Validation'
 
 interface Step1Props {
   employeeId: number | null
   onCreated: (employeeId: number) => void
   onContinue: () => void
   /**
-   * Resuming a previously-saved draft (from the Employees list "Continue" action).
-   * Only the draft id and the two fields A08 validates are available here — the
-   * backend has no `GET /api/onboarding-drafts/{id}` endpoint (not in spec.md §6),
-   * so the rest of a previously-entered form cannot be restored; the employee
-   * re-enters it. See F01 spec.md §12 D-23. `undefined` for a brand-new draft.
+   * Resuming a previously-saved draft (Employees list "Continue", route
+   * /onboarding/draft/:draftId). The whole saved form is read back with
+   * A09a `GET /api/onboarding-drafts/{id}` (D-23); the router-state names are only
+   * shown until that response arrives. `undefined` for a brand-new employee.
    */
   initialDraftId?: number
   initialFirstName?: string
   initialLastName?: string
 }
 
-interface FormState {
-  firstName: string
-  lastName: string
-  privateEmail: string
-  mobilePhone: string
-  dateOfBirth: string // display format dd-mm-yyyy
-  nationality: string
-  street: string
-  postcode: string
-  city: string
-  contractType: string
-  startDate: string // display format dd-mm-yyyy
-  endDate: string // display format dd-mm-yyyy
-  hoursPerWeek: string
-  probationMonths: string
-  idChecked: boolean
-  contractSignedReceived: boolean
-  rightToWorkVerified: boolean
-  jobTitleId: string
-  departmentId: string
-  managerId: string
-  grade: string
-  appRole: string
-  buddyId: string
-  templateId: string
+const SECTION_LABELS: Record<string, string> = {
+  DOCUMENTS_ADMIN: 'Documents & admin',
+  EQUIPMENT_ISSUED: 'Equipment issued',
+  ACCOUNTS_INSTALLATIONS: 'Accounts & installations',
+  ORIENTATION: 'Orientation',
 }
 
-const EMPTY_FORM: FormState = {
-  firstName: '', lastName: '', privateEmail: '', mobilePhone: '',
-  dateOfBirth: '', nationality: '', street: '', postcode: '', city: '',
-  contractType: 'PERMANENT', startDate: '', endDate: '',
-  hoursPerWeek: '40', probationMonths: '0',
-  idChecked: false, contractSignedReceived: false, rightToWorkVerified: false,
-  jobTitleId: '', departmentId: '', managerId: '', grade: '',
-  appRole: 'EMPLOYEE', buddyId: '', templateId: '',
-}
-
-type FieldErrors = Partial<Record<keyof FormState | 'verification' | '_general', string>>
-
-/** Client-side validation. Messages are exact copies from spec §5 (R-SRC-3). */
-function validate(form: FormState, isDraft: boolean): FieldErrors {
-  if (isDraft) {
-    const errs: FieldErrors = {}
-    if (form.firstName.trim() === '') errs.firstName = 'This field is required.'
-    if (form.lastName.trim() === '') errs.lastName = 'This field is required.'
-    return errs
-  }
-  const errs: FieldErrors = {}
-  if (form.firstName.trim() === '') errs.firstName = 'This field is required.'
-  if (form.lastName.trim() === '') errs.lastName = 'This field is required.'
-  if (form.privateEmail.trim() === '') errs.privateEmail = 'This field is required.'
-  else if (!isValidEmail(form.privateEmail)) errs.privateEmail = 'Enter a valid e-mail address.'
-  if (form.mobilePhone.trim() === '') errs.mobilePhone = 'This field is required.'
-  else if (!isValidPhone(form.mobilePhone)) errs.mobilePhone = 'Enter a valid phone number, e.g. +31 6 12345678.'
-  if (form.dateOfBirth.trim() === '') errs.dateOfBirth = 'This field is required.'
-  if (form.street.trim() === '') errs.street = 'This field is required.'
-  if (form.postcode.trim() === '') errs.postcode = 'This field is required.'
-  else if (!/^\d{4} [A-Z]{2}$/.test(form.postcode)) errs.postcode = 'Enter a valid postcode, e.g. 3511 AV.'
-  if (form.city.trim() === '') errs.city = 'This field is required.'
-  if (form.startDate.trim() === '') errs.startDate = 'This field is required.'
-  if (form.contractType === 'FIXED_TERM' && form.endDate.trim() === '') errs.endDate = 'This field is required.'
-  if (form.hoursPerWeek === '' || +form.hoursPerWeek < 1 || +form.hoursPerWeek > 40) {
-    errs.hoursPerWeek = 'Hours must be between 1 and 40.'
-  }
-  if (!form.idChecked || !form.contractSignedReceived) {
-    errs.verification = 'Confirm that the ID was checked and the contract is signed.'
-  }
-  if (form.jobTitleId === '') errs.jobTitleId = 'This field is required.'
-  if (form.departmentId === '') errs.departmentId = 'This field is required.'
-  if (form.grade === '') errs.grade = 'This field is required.'
-  if (form.appRole === '') errs.appRole = 'This field is required.'
-  if (form.templateId === '') errs.templateId = 'This field is required.'
-  return errs
+/** Maps a 400 VALIDATION_FAILED body onto the form's field errors. */
+function toFieldErrors(err: ApiValidationError): Step1Errors {
+  const out: Step1Errors = {}
+  err.errors.forEach((e) => {
+    if (e.field !== undefined && e.field !== '') {
+      out[e.field as keyof Step1Errors] = e.message
+    }
+  })
+  return out
 }
 
 /**
  * Step1Details renders the employee-details form.
  *
- * Draft mode: only firstName/lastName are required (D-13). A draft ID is stored
- * in local state; subsequent "Save draft" calls use PUT /api/onboarding-drafts/{id}.
+ * Draft mode: only firstName/lastName are required (D-13). The whole form (plus an
+ * uploaded contract's document id) is stored in the draft and restored on resume.
  *
  * Probation end date is derived in the component (ONB-01) from startDate + probationMonths
  * for display only — the backend recomputes it and the API never receives it.
@@ -129,13 +74,18 @@ export function Step1Details({
 }: Step1Props): ReactElement {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
-  const [form, setForm] = useState<FormState>(() => ({
-    ...EMPTY_FORM,
+  const [form, setForm] = useState<Step1FormState>(() => ({
+    ...EMPTY_STEP1_FORM,
     firstName: initialFirstName ?? '',
     lastName: initialLastName ?? '',
   }))
-  const [errors, setErrors] = useState<FieldErrors>({})
+  const [errors, setErrors] = useState<Step1Errors>({})
   const [draftId, setDraftId] = useState<number | null>(initialDraftId ?? null)
+  // ONB-09: the employee that already uses the entered private e-mail (409 body)
+  const [existingEmployeeId, setExistingEmployeeId] = useState<number | null>(null)
+  // Contract file (FRD-02 §4.1 "Upload the contract file" → document CONTRACT, A07)
+  const [contractDocumentId, setContractDocumentId] = useState<number | null>(null)
+  const [contractFileName, setContractFileName] = useState<string>('')
 
   // Load lookups (departments, job titles, managers, etc.)
   const { data: lookups } = useQuery({
@@ -149,6 +99,27 @@ export function Step1Details({
     queryFn: () => getOnboarding(employeeId!),
     enabled: employeeId !== null,
   })
+
+  // Resume a saved draft: restore every field it holds (A09a, D-23)
+  const { data: savedDraft } = useQuery({
+    queryKey: ['onboarding-draft', initialDraftId],
+    queryFn: () => getDraft(initialDraftId!),
+    enabled: initialDraftId !== undefined && employeeId === null,
+  })
+  const draftRestored = useRef(false)
+  useEffect(() => {
+    if (savedDraft === undefined || draftRestored.current) return
+    draftRestored.current = true
+    setForm({
+      ...formFromDraft(savedDraft.form),
+      firstName: savedDraft.firstName,
+      lastName: savedDraft.lastName,
+    })
+    const docId = savedDraft.form['contractDocumentId']
+    if (typeof docId === 'number') setContractDocumentId(docId)
+    const docName = savedDraft.form['contractFileName']
+    if (typeof docName === 'string') setContractFileName(docName)
+  }, [savedDraft])
 
   // Template preview — re-fetched whenever templateId changes
   const { data: preview } = useQuery({
@@ -217,11 +188,14 @@ export function Step1Details({
     onSuccess: () => {
       showToast('Details saved.')
       void queryClient.invalidateQueries({ queryKey: ['onboarding-summary', employeeId] })
+      void queryClient.invalidateQueries({ queryKey: ['checklist', employeeId] })
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       onContinue()
     },
     onError: (err: unknown) => {
-      if (err instanceof ApiResponseError && err.body.code === 'STALE_VERSION') {
+      if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED') {
+        setErrors(toFieldErrors(err.body as ApiValidationError))
+      } else if (err instanceof ApiResponseError && err.body.code === 'STALE_VERSION') {
         showToast('Data changed by someone else. Please reload.', 'error')
       } else {
         showToast('Failed to save details.', 'error')
@@ -229,9 +203,15 @@ export function Step1Details({
     },
   })
 
-  const setField = <K extends keyof FormState>(key: K, value: FormState[K]): void => {
-    setForm((prev) => ({ ...prev, [key]: value }))
+  const setField = <K extends keyof Step1FormState>(key: K, value: Step1FormState[K]): void => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: value,
+      // Permanent contract: the end date is disabled and not required (FRD-02 "Other paths")
+      ...(key === 'contractType' && value === 'PERMANENT' ? { endDate: '' } : {}),
+    }))
     setErrors((prev) => ({ ...prev, [key]: undefined }))
+    if (key === 'privateEmail') setExistingEmployeeId(null)
   }
 
   // Derived: probation end date (ONB-01) — display only
@@ -250,9 +230,18 @@ export function Step1Details({
     }
   })()
 
-  // Mutations
+  // The draft stores the whole form plus the uploaded contract's id/name (D-13, D-23)
+  const draftPayload = (): { firstName: string; lastName: string; form: Record<string, unknown> } => ({
+    firstName: form.firstName,
+    lastName: form.lastName,
+    form: {
+      ...form,
+      ...(contractDocumentId !== null && { contractDocumentId, contractFileName }),
+    },
+  })
+
   const createDraftMutation = useMutation({
-    mutationFn: () => createDraft({ firstName: form.firstName, lastName: form.lastName }),
+    mutationFn: () => createDraft(draftPayload()),
     onSuccess: (result) => {
       setDraftId(result.draftId)
       showToast('Draft saved.')
@@ -261,9 +250,28 @@ export function Step1Details({
   })
 
   const updateDraftMutation = useMutation({
-    mutationFn: () => updateDraft(draftId!, { firstName: form.firstName, lastName: form.lastName }),
+    mutationFn: () => updateDraft(draftId!, draftPayload()),
     onSuccess: () => showToast('Draft saved.'),
     onError: () => showToast('Failed to save draft.', 'error'),
+  })
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => uploadDocument(file, 'CONTRACT'),
+    onSuccess: (result, file) => {
+      setContractDocumentId(result.documentId)
+      setContractFileName(file.name)
+      setErrors((prev) => ({ ...prev, contractFile: undefined }))
+    },
+    onError: (err: unknown) => {
+      setContractDocumentId(null)
+      setContractFileName('')
+      if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED') {
+        const first = (err.body as ApiValidationError).errors[0]
+        setErrors((prev) => ({ ...prev, contractFile: first?.message }))
+      } else {
+        showToast('Failed to upload the contract file.', 'error')
+      }
+    },
   })
 
   const createMutation = useMutation({
@@ -287,9 +295,10 @@ export function Step1Details({
         idChecked: form.idChecked,
         contractSignedReceived: form.contractSignedReceived,
         rightToWorkVerified: form.rightToWorkVerified,
+        contractDocumentId: contractDocumentId ?? undefined,
         jobTitleId: parseInt(form.jobTitleId, 10),
         departmentId: parseInt(form.departmentId, 10),
-        managerId: form.managerId !== '' ? parseInt(form.managerId, 10) : undefined,
+        managerId: parseInt(form.managerId, 10),
         grade: form.grade,
         appRole: form.appRole,
         buddyId: form.buddyId !== '' ? parseInt(form.buddyId, 10) : undefined,
@@ -302,16 +311,11 @@ export function Step1Details({
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED') {
-        const ve = err.body as ApiValidationError
-        const fieldErrs: FieldErrors = {}
-        ve.errors.forEach((e) => {
-          if (e.field !== undefined) {
-            const k = e.field as keyof FormState
-            fieldErrs[k] = e.message
-          }
-        })
-        setErrors(fieldErrs)
+        setErrors(toFieldErrors(err.body as ApiValidationError))
       } else if (err instanceof ApiResponseError && err.body.code === 'DUPLICATE_PRIVATE_EMAIL') {
+        // ONB-09 / AC-06: show the message and a link to the existing employee
+        const extra = (err.body as unknown as { existingEmployeeId?: unknown }).existingEmployeeId
+        setExistingEmployeeId(typeof extra === 'number' ? extra : null)
         setErrors({ privateEmail: 'An employee with this e-mail address already exists.' })
       } else {
         showToast('Failed to save employee.', 'error')
@@ -320,7 +324,7 @@ export function Step1Details({
   })
 
   const handleSaveDraft = (): void => {
-    const errs = validate(form, true)
+    const errs = validateStep1(form, true)
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     if (draftId === null) {
       createDraftMutation.mutate()
@@ -330,13 +334,18 @@ export function Step1Details({
   }
 
   const handleSaveAndContinue = (): void => {
-    const errs = validate(form, false)
+    const errs = validateStep1(form, false)
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     if (employeeId !== null) {
       updateMutation.mutate()
     } else {
       createMutation.mutate()
     }
+  }
+
+  const handleContractFile = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    if (file !== undefined) uploadMutation.mutate(file)
   }
 
   const gradeOptions = (lookups?.grades ?? []).map((g) => ({ value: g, label: g.replace('_', ' ') }))
@@ -346,6 +355,7 @@ export function Step1Details({
   const managerOptions = (lookups?.managers ?? []).map((m) => ({ value: String(m.id), label: m.name }))
   const buddyOptions = (lookups?.buddies ?? []).map((b) => ({ value: String(b.id), label: b.name }))
   const templateOptions = (lookups?.templates ?? []).map((t) => ({ value: String(t.id), label: t.name }))
+  const permanent = form.contractType !== 'FIXED_TERM'
 
   return (
     <div className="space-y-6">
@@ -354,7 +364,17 @@ export function Step1Details({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field id="firstName" label="First name" value={form.firstName} onChange={(v) => setField('firstName', String(v))} required error={errors.firstName} />
           <Field id="lastName" label="Last name" value={form.lastName} onChange={(v) => setField('lastName', String(v))} required error={errors.lastName} />
-          <Field id="privateEmail" disabled={locked} label="Private e-mail" type="email" value={form.privateEmail} onChange={(v) => setField('privateEmail', String(v))} required error={errors.privateEmail} />
+          <div>
+            <Field id="privateEmail" disabled={locked} label="Private e-mail" type="email" value={form.privateEmail} onChange={(v) => setField('privateEmail', String(v))} required error={errors.privateEmail} />
+            {existingEmployeeId !== null && (
+              <Link
+                to={`/employees/${existingEmployeeId}`}
+                className="mt-1 inline-block text-xs text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+              >
+                Open the existing employee →
+              </Link>
+            )}
+          </div>
           <Field id="mobilePhone" label="Mobile phone" type="tel" value={form.mobilePhone} onChange={(v) => setField('mobilePhone', String(v))} required placeholder="+31 6 12345678" error={errors.mobilePhone} />
           <Field id="dateOfBirth" disabled={locked} label="Date of birth (dd-mm-yyyy)" type="date" value={form.dateOfBirth} onChange={(v) => setField('dateOfBirth', String(v))} required placeholder="dd-mm-yyyy" error={errors.dateOfBirth} />
           <Field id="nationality" disabled={locked} label="Nationality" value={form.nationality} onChange={(v) => setField('nationality', String(v))} />
@@ -381,19 +401,28 @@ export function Step1Details({
             error={errors.contractType}
           />
           <Field id="startDate" label="Start date (dd-mm-yyyy)" type="date" value={form.startDate} onChange={(v) => setField('startDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.startDate} />
-          {form.contractType === 'FIXED_TERM' && (
-            <Field id="endDate" label="End date (dd-mm-yyyy)" type="date" value={form.endDate} onChange={(v) => setField('endDate', String(v))} required placeholder="dd-mm-yyyy" error={errors.endDate} />
-          )}
+          {/* Permanent: shown disabled and not required (FRD-02 "Other paths") */}
+          <Field
+            id="endDate" label="End date (dd-mm-yyyy)" type="date"
+            value={form.endDate}
+            onChange={(v) => setField('endDate', String(v))}
+            required={!permanent}
+            disabled={permanent}
+            placeholder="dd-mm-yyyy"
+            error={errors.endDate}
+          />
           <Field id="hoursPerWeek" label="Hours per week" type="number" value={form.hoursPerWeek} onChange={(v) => setField('hoursPerWeek', String(v))} required min={1} max={40} error={errors.hoursPerWeek} />
           <Field
             id="probationMonths" label="Probation period" type="select"
             value={form.probationMonths}
             onChange={(v) => setField('probationMonths', String(v))}
+            required
             options={[
-              { value: '0', label: 'None' },
               { value: '1', label: '1 month' },
               { value: '2', label: '2 months' },
+              { value: '0', label: 'None' },
             ]}
+            error={errors.probationMonths}
           />
           {probationEnd !== '' && (
             <Field id="probationEnd" label="Probation ends" value={probationEnd} readOnly />
@@ -410,6 +439,29 @@ export function Step1Details({
           {errors.verification !== undefined && (
             <p role="alert" className="text-xs text-red-600">{errors.verification}</p>
           )}
+          {!locked && (
+            <div className="pt-2">
+              <label htmlFor="contractFile" className="block text-sm font-medium text-gray-700 mb-1">
+                Contract file
+              </label>
+              <input
+                id="contractFile"
+                type="file"
+                accept="application/pdf,image/png,image/jpeg"
+                onChange={handleContractFile}
+                disabled={uploadMutation.isPending}
+                className="block w-full text-sm text-gray-700 file:mr-3 file:px-3 file:py-2 file:rounded-md file:border file:border-gray-300 file:bg-white file:text-sm min-h-[44px]"
+              />
+              <p className="mt-1 text-xs text-gray-500">PDF, PNG or JPEG, up to 10 MB.</p>
+              {uploadMutation.isPending && <p className="mt-1 text-xs text-gray-500">Uploading…</p>}
+              {contractDocumentId !== null && !uploadMutation.isPending && (
+                <p className="mt-1 text-xs text-green-700">Uploaded: {contractFileName}</p>
+              )}
+              {errors.contractFile !== undefined && (
+                <p role="alert" className="mt-1 text-xs text-red-600">{errors.contractFile}</p>
+              )}
+            </div>
+          )}
         </div>
       </Card>
 
@@ -419,7 +471,7 @@ export function Step1Details({
           <div className="space-y-4">
             <Field id="jobTitleId" disabled={locked} label="Job title" type="select" value={form.jobTitleId} onChange={(v) => setField('jobTitleId', String(v))} required options={jobTitleOptions} error={errors.jobTitleId} />
             <Field id="departmentId" disabled={locked} label="Department" type="select" value={form.departmentId} onChange={(v) => setField('departmentId', String(v))} required options={deptOptions} error={errors.departmentId} />
-            <Field id="managerId" disabled={locked} label="Manager" type="select" value={form.managerId} onChange={(v) => setField('managerId', String(v))} options={managerOptions} />
+            <Field id="managerId" disabled={locked} label="Manager" type="select" value={form.managerId} onChange={(v) => setField('managerId', String(v))} required options={managerOptions} error={errors.managerId} />
             <Field id="grade" disabled={locked} label="Grade" type="select" value={form.grade} onChange={(v) => setField('grade', String(v))} required options={gradeOptions} error={errors.grade} />
             <Field id="appRole" disabled={locked} label="Application role" type="select" value={form.appRole} onChange={(v) => setField('appRole', String(v))} required options={roleOptions} error={errors.appRole} />
             <Field id="buddyId" disabled={locked} label="Buddy" type="select" value={form.buddyId} onChange={(v) => setField('buddyId', String(v))} options={buddyOptions} />
@@ -427,21 +479,26 @@ export function Step1Details({
           </div>
         </Card>
 
-        {/* Template preview panel */}
+        {/* Template preview panel: total, then each section with its count and item names */}
         <Card title="Template preview">
           {preview !== undefined ? (
-            <div className="text-sm space-y-2">
+            <div className="text-sm space-y-3">
               <p className="font-medium text-gray-900">
                 {preview.totalItems} checklist items will be created
               </p>
-              <ul className="space-y-1">
-                {preview.sections.map((s) => (
-                  <li key={s.section} className="flex justify-between text-gray-600">
-                    <span>{s.section.replace(/_/g, ' ')}</span>
-                    <span className="font-medium">({s.count})</span>
-                  </li>
-                ))}
-              </ul>
+              {preview.sections.map((s) => (
+                <div key={s.section}>
+                  <p className="flex justify-between text-gray-700 font-medium">
+                    <span>{SECTION_LABELS[s.section] ?? s.section.replace(/_/g, ' ')}</span>
+                    <span>({s.count})</span>
+                  </p>
+                  <ul className="mt-1 ml-4 list-disc text-gray-600 space-y-0.5">
+                    {s.items.map((name, i) => (
+                      <li key={`${s.section}-${i}`}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="text-sm text-gray-400">Select a template to preview.</p>
@@ -474,7 +531,7 @@ export function Step1Details({
           <button
             type="button"
             onClick={handleSaveAndContinue}
-            disabled={createMutation.isPending || updateMutation.isPending}
+            disabled={createMutation.isPending || updateMutation.isPending || uploadMutation.isPending}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50"
           >
             {createMutation.isPending || updateMutation.isPending ? 'Saving…' : 'Save & continue'}

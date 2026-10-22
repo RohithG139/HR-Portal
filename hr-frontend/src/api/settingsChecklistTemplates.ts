@@ -39,6 +39,10 @@ export interface ChecklistTemplateItemDto {
   mandatory: boolean
   dueOffsetDays: number
   sortOrder: number
+  /** checklist_template_item.item_kind, e.g. GENERIC, POLICY_ACK, PROFILE, EQUIPMENT_CONFIRM. */
+  itemKind: string
+  /** POLICY document shown by a POLICY_ACK item (D-07); null otherwise. */
+  policyDocumentId: number | null
 }
 
 /** Request body for creating or updating a checklist template item (C11, C12). */
@@ -48,6 +52,10 @@ export interface ChecklistTemplateItemRequest {
   ownerRole: string
   mandatory: boolean
   dueOffsetDays: number
+  /** Optional; the backend defaults to GENERIC. */
+  itemKind?: string
+  /** Only kept for itemKind POLICY_ACK (DB CHECK). */
+  policyDocumentId?: number | null
 }
 
 // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import { getItLookups } from '../../api/lookups'
 import { ApiResponseError } from '../../api/types'
 import type { ApiValidationError } from '../../api/types'
 import { Badge, Card, Field, useToast } from '../../components/index'
-import { formatDate } from '../../lib/date'
+import { formatDate, toIsoDateOrEmpty } from '../../lib/date'
 
 interface Step2Props {
   employeeId: number
@@ -42,18 +42,6 @@ const EMPTY_IT: ItFormState = {
 
 function toggleItem(arr: string[], item: string): string[] {
   return arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item]
-}
-
-/** Converts display date to ISO for the API, returns empty string if blank. */
-function displayToIso(display: string): string {
-  if (display === '') return ''
-  try {
-    const [d, m, y] = display.split('-')
-    if (d === undefined || m === undefined || y === undefined) return ''
-    return `${y}-${m}-${d}`
-  } catch {
-    return ''
-  }
 }
 
 /**
@@ -104,7 +92,7 @@ export function Step2ItRequest({ employeeId, onContinue }: Step2Props): ReactEle
     mutationFn: () => saveItRequest(employeeId, {
       laptopModel: form.laptopModel || null,
       keyboardLayout: form.keyboardLayout || null,
-      readyBy: displayToIso(form.readyBy) || null,
+      readyBy: toIsoDateOrEmpty(form.readyBy) || null,
       deliveryMethod: form.deliveryMethod || null,
       notes: form.notes || null,
       accessories: form.accessories,
@@ -118,7 +106,7 @@ export function Step2ItRequest({ employeeId, onContinue }: Step2Props): ReactEle
     mutationFn: () => sendItRequest(employeeId, {
       laptopModel: form.laptopModel || null,
       keyboardLayout: form.keyboardLayout || null,
-      readyBy: displayToIso(form.readyBy) || null,
+      readyBy: toIsoDateOrEmpty(form.readyBy) || null,
       deliveryMethod: form.deliveryMethod || null,
       notes: form.notes || null,
       accessories: form.accessories,
@@ -146,6 +134,23 @@ export function Step2ItRequest({ employeeId, onContinue }: Step2Props): ReactEle
       }
     },
   })
+
+  /**
+   * Client-side mirror of A14's checks, same texts as the backend (R-CODE-2, R-SRC-3):
+   * laptop, ready-by and delivery are required to send; ready-by must not be after the start date.
+   */
+  const handleSend = (): void => {
+    if (form.laptopModel === '' || toIsoDateOrEmpty(form.readyBy) === '' || form.deliveryMethod === '') {
+      setErrors({ _general: 'Complete the equipment request before sending it to IT.' })
+      return
+    }
+    const startIso = summary?.startDate ?? ''
+    if (startIso !== '' && toIsoDateOrEmpty(form.readyBy) > startIso) {
+      setErrors({ readyBy: 'The ready-by date must be on or before the start date.' })
+      return
+    }
+    sendMutation.mutate()
+  }
 
   const setField = <K extends keyof ItFormState>(key: K, value: ItFormState[K]): void => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -279,7 +284,7 @@ export function Step2ItRequest({ employeeId, onContinue }: Step2Props): ReactEle
           <button
             type="button"
             onClick={() => {
-              if (alreadySent) { onContinue() } else { sendMutation.mutate() }
+              if (alreadySent) { onContinue() } else { handleSend() }
             }}
             disabled={sendMutation.isPending}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50"

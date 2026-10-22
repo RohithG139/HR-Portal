@@ -7,7 +7,7 @@ Features are built **one at a time** in this order (CLAUDE.md §2.9).
 | ID | Feature | FRD | Depends on | Status | Folder |
 |---|---|---|---|---|---|
 | F01 | Create employee → Onboarding, plus the shared basics it needs (login, layout, My Tasks, notifications, employee record) | FRD-02 (onboarding part), FRD-01 (parts), FRD-00 | – | **In progress** (gates 0–4 done; gate 5 review ran and fixed real issues, not yet "Done" — spec coverage 84.2%, a few items need a user decision, see spec.md §13) | `F01-onboarding/` |
-| F02 | Probation review | FRD-02 (probation part) | F01 | Not started | – |
+| F02 | Probation review | FRD-02 (probation part) | F01 | **In progress** (2026-10-21 — gates 1–4 built: V17, P01–P04 + scheduler, case model live-verified, Screens 12/13; D-P2/D-P4/D-P5 decided by the user; gate 5 review not yet run) | `FRD-02-onboarding-probation/` |
 | F03 | Shared workspace: remainder (dashboards per role, profile editing, transfer manager) | FRD-01 | F01 | **Done** (2026-10-17 — gates 1/2/4 built it (migration V14, W01/W05/W06/W09/W10 backend, D-W9 IT admin employees extension, dashboards/My Team/Transfer manager/placeholder tabs); gate 5 found 2 HIGH security findings (IDOR on Transfer manager, see D-W11) + a same-day-transfer transaction bug + code-quality issues, all fixed; gate 3 N/A, no case-file changes. Final: 339 backend tests, 94 frontend tests, spec-coverage re-verified) | `FRD-01-shared-workspace/` |
 | F04 | Projects & work cycle (projects, assignments, bench, client feedback, project reviews, change PM) | FRD-03 | F01 | Not started — **schema already applied** (see note below) | – |
 | F05 | Development plan & KPIs | FRD-04 | F01 | Not started | – |

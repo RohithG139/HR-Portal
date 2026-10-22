@@ -182,3 +182,24 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/**
+ * POSTs a multipart form (file upload) and parses the JSON response.
+ * The `Content-Type` header is left to the browser so it can add the multipart boundary.
+ *
+ * @param path API path (relative to BASE_URL)
+ * @param form the multipart body
+ */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (token !== undefined) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  const response = await fetch(`${BASE_URL}${path}`, { method: 'POST', headers, body: form })
+  if (!response.ok) {
+    const body = await parseErrorBody(response)
+    throw new ApiResponseError(response.status, body)
+  }
+  return (await response.json()) as T
+}

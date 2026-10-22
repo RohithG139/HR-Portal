@@ -48,6 +48,20 @@ public interface CaseEngineClient {
     void updateCaseFile(String caseId, String item, Map<String, Object> fields);
 
     /**
+     * Creates a case-file item that is not yet present in the case (a {@code ZeroOrOne} item such
+     * as {@code Probation}, which does not exist until the probation review is raised).
+     *
+     * <p>{@link #updateCaseFile} only works on an item that already exists; the engine rejects an
+     * update of an absent item. Callers that may run twice (retries) should fall back to
+     * {@link #updateCaseFile} when the item turns out to exist already.</p>
+     *
+     * @param caseId the engine case identifier
+     * @param item   the case-file item name (e.g. {@code "Probation"}), from {@code 03-case-file.md}
+     * @param fields the item's initial fields; must not contain personal data
+     */
+    void createCaseFileItem(String caseId, String item, Map<String, Object> fields);
+
+    /**
      * Completes an engine human task with the given output.
      *
      * <p>Called by the undo-window scheduler ({@link com.cubeworks.hr.onboarding.UndoWindowScheduler})

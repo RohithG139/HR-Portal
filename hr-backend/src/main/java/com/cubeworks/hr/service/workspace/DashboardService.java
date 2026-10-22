@@ -275,7 +275,7 @@ public class DashboardService {
     private List<DashboardTaskDto> toTaskDtos(final Employee caller) {
         return taskService.getMyTasks(caller, null, null, 0).content().stream()
                 .map(t -> new DashboardTaskDto(t.taskId(), t.title(), t.employeeId(),
-                        t.dueDate(), t.dueState(), t.employeeName()))
+                        t.dueDate(), t.dueState(), t.employeeName(), t.employeeCode(), t.relatedId()))
                 .toList();
     }
 }

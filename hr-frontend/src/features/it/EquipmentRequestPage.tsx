@@ -14,7 +14,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getEquipmentRequest, tickItem, untickItem, completeEquipmentRequest } from '../../api/onboarding'
 import { unissueAsset } from '../../api/assets'
-import { Card, Badge, useToast } from '../../components/index'
+import type { UndoWindowResult } from '../../api/onboarding'
+import { Card, Badge, UndoBanner, useToast } from '../../components/index'
 import { formatDate } from '../../lib/date'
 import { AddEquipmentModal } from './AddEquipmentModal'
 
@@ -33,6 +34,8 @@ export function EquipmentRequestPage(): ReactElement {
   const { showToast } = useToast()
   const [addEquipOpen, setAddEquipOpen] = useState(false)
   const [tickingId, setTickingId] = useState<number | null>(null)
+  // Pending completion inside the undo window (R-API-6): stay on the page until it ends
+  const [pending, setPending] = useState<UndoWindowResult | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['equipment-request', employeeId],
@@ -60,10 +63,8 @@ export function EquipmentRequestPage(): ReactElement {
   const completeMutation = useMutation({
     mutationFn: () => completeEquipmentRequest(employeeId),
     onSuccess: (result) => {
-      showToast(`Setup marked done. Undo until ${result.undoUntil}.`)
-      void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
-      // Task is finished: back to the task list (the toast is global, so it stays)
-      void navigate('/my-tasks')
+      // Stay here until the undo window ends (UndoBanner.onExpired), then back to My Tasks
+      setPending(result)
     },
     onError: () => showToast('Failed to mark setup done.', 'error'),
   })
@@ -91,6 +92,22 @@ export function EquipmentRequestPage(): ReactElement {
         </div>
         <Badge label={data.itStatus} variant={data.itStatus === 'COMPLETED' ? 'success' : 'info'} />
       </div>
+
+      {pending !== null && (
+        <UndoBanner
+          taskId={pending.taskId}
+          undoUntil={pending.undoUntil}
+          message="Setup marked done."
+          onUndone={() => {
+            setPending(null)
+            void queryClient.invalidateQueries({ queryKey: ['equipment-request', employeeId] })
+          }}
+          onExpired={() => {
+            void queryClient.invalidateQueries({ queryKey: ['my-tasks'] })
+            void navigate('/my-tasks')
+          }}
+        />
+      )}
 
       {/* Equipment issued */}
       <Card
@@ -197,7 +214,7 @@ export function EquipmentRequestPage(): ReactElement {
         <button
           type="button"
           onClick={() => completeMutation.mutate()}
-          disabled={completeMutation.isPending}
+          disabled={completeMutation.isPending || pending !== null}
           className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50"
         >
           {completeMutation.isPending ? 'Saving…' : 'Mark setup done'}

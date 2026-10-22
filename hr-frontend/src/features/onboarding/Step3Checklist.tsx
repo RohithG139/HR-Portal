@@ -16,8 +16,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getChecklist, tickItem, untickItem, completeOnboarding,
 } from '../../api/onboarding'
+import type { UndoWindowResult } from '../../api/onboarding'
 import { ApiResponseError } from '../../api/types'
-import { Checklist, useToast } from '../../components/index'
+import { Checklist, UndoBanner, useToast } from '../../components/index'
 import { AddItemModal } from './AddItemModal'
 
 interface Step3Props {
@@ -36,6 +37,8 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
   const { showToast } = useToast()
   const [addItemOpen, setAddItemOpen] = useState(false)
   const [tickingId, setTickingId] = useState<number | null>(null)
+  // Pending completion inside the undo window (R-API-6): stay on the page until it ends
+  const [pending, setPending] = useState<UndoWindowResult | null>(null)
 
   const { data: checklist, isLoading } = useQuery({
     queryKey: ['checklist', employeeId],
@@ -75,14 +78,10 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
   const completeMutation = useMutation({
     mutationFn: () => completeOnboarding(employeeId),
     onSuccess: (result) => {
-      showToast(`Onboarding completing… undo available until ${result.undoUntil}.`)
+      // Stay here until the undo window ends (UndoBanner.onExpired), then go back to the list
+      setPending(result)
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
-      // Refresh the checklist so canComplete reflects the now-pending task; combined with
-      // completeMutation.isSuccess on the button below this stops a second click from firing
-      // against the already-completing task and showing a false "Failed to complete" toast.
       void queryClient.invalidateQueries({ queryKey: ['checklist', employeeId] })
-      // New employee is done: back to the Employees list (the toast is global, so it stays)
-      void navigate('/employees')
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'MANDATORY_ITEMS_OPEN') {
@@ -106,6 +105,23 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
 
   return (
     <div className="space-y-6">
+      {pending !== null && (
+        <UndoBanner
+          taskId={pending.taskId}
+          undoUntil={pending.undoUntil}
+          message="Onboarding completed."
+          onUndone={() => {
+            setPending(null)
+            completeMutation.reset()
+            void queryClient.invalidateQueries({ queryKey: ['checklist', employeeId] })
+            void queryClient.invalidateQueries({ queryKey: ['employees'] })
+          }}
+          onExpired={() => {
+            void queryClient.invalidateQueries({ queryKey: ['employees'] })
+            void navigate('/employees')
+          }}
+        />
+      )}
       {checklist !== undefined && (
         <Checklist
           sections={checklist.sections}
@@ -139,12 +155,12 @@ export function Step3Checklist({ employeeId }: Step3Props): ReactElement {
           <button
             type="button"
             onClick={() => completeMutation.mutate()}
-            disabled={!canComplete || completeMutation.isPending || completeMutation.isSuccess}
+            disabled={!canComplete || completeMutation.isPending || pending !== null}
             aria-disabled={!canComplete}
             title={!canComplete ? 'Complete all mandatory items first' : undefined}
             className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white min-h-[44px] focus-visible:ring-2 focus-visible:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {completeMutation.isPending || completeMutation.isSuccess ? 'Completing…' : 'Complete onboarding'}
+            {completeMutation.isPending || pending !== null ? 'Completing…' : 'Complete onboarding'}
           </button>
         </div>
       </div>

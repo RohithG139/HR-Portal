@@ -84,6 +84,7 @@ public class OnboardingService {
     private final com.cubeworks.hr.security.SelfActionGuard selfActionGuard;
     private final TaskNotificationService taskNotificationService;
     private final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient;
+    private final DocumentService documentService;
 
     /**
      * Constructor injection (R-CODE-1) — all dependencies explicit.
@@ -109,7 +110,8 @@ public class OnboardingService {
                               final ObjectMapper objectMapper,
                               final com.cubeworks.hr.security.SelfActionGuard selfActionGuard,
                               final TaskNotificationService taskNotificationService,
-                              final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient) {
+                              final com.cubeworks.hr.idp.KeycloakAdminClient keycloakAdminClient,
+                              final DocumentService documentService) {
         this.employeeRepository = employeeRepository;
         this.contractRepository = contractRepository;
         this.departmentRepository = departmentRepository;
@@ -132,6 +134,7 @@ public class OnboardingService {
         this.selfActionGuard = selfActionGuard;
         this.taskNotificationService = taskNotificationService;
         this.keycloakAdminClient = keycloakAdminClient;
+        this.documentService = documentService;
     }
 
     // ── A06 Template preview ──────────────────────────────────────────────────
@@ -220,6 +223,31 @@ public class OnboardingService {
         draft.setUpdatedAt(OffsetDateTime.now(clock));
         draft.setUpdatedBy(caller.getId());
         draftRepository.save(draft);
+        auditLogService.record(null, "ONBOARDING_DRAFT", draftId, "UPDATE_DRAFT", caller, null, null);
+    }
+
+    /**
+     * Returns a saved draft so step 1 can be resumed with every field restored (A09a, D-23).
+     *
+     * @param draftId the draft to read
+     * @return id, first/last name and the parsed {@code onboarding_draft.form} JSON
+     */
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasRole('HR')")
+    public DraftDto getDraft(final long draftId) {
+        final OnboardingDraft draft = draftRepository.findById(draftId)
+                .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
+                        "Draft " + draftId + " not found"));
+        com.fasterxml.jackson.databind.JsonNode form;
+        try {
+            form = objectMapper.readTree(draft.getForm() != null ? draft.getForm() : "{}");
+        } catch (final JsonProcessingException ex) {
+            // Rows written before the form was stored as real JSON (Map.toString()) cannot be
+            // parsed; return an empty form rather than failing the whole resume.
+            log.warn("Draft {} has an unparseable form; returning an empty form", draftId);
+            form = objectMapper.createObjectNode();
+        }
+        return new DraftDto(draft.getId(), draft.getFirstName(), draft.getLastName(), form);
     }
 
     // ── A10 Create onboarding ─────────────────────────────────────────────────
@@ -294,7 +322,8 @@ public class OnboardingService {
         }
 
         // 1. Duplicate e-mail check (ONB-09)
-        employeeRepository.findByPrivateEmail(req.privateEmail()).ifPresent(existing -> {
+        // Case-insensitive: "Jesse@Outlook.com" and "jesse@outlook.com" are the same mailbox.
+        employeeRepository.findByPrivateEmailIgnoreCase(req.privateEmail()).ifPresent(existing -> {
             throw new DuplicateEmailException(existing.getId());
         });
 
@@ -340,13 +369,16 @@ public class OnboardingService {
 
         // Link the contract document uploaded via A07 (POST /api/documents) to the new
         // employee, if one was provided — it is uploaded unlinked (no employee row exists yet).
+        // Only an unlinked CONTRACT upload may be claimed — never another employee's document.
         if (req.contractDocumentId() != null) {
-            documentRepository.findById(req.contractDocumentId()).ifPresent(doc -> {
-                doc.setEmployee(savedEmp);
-                doc.setUpdatedAt(now);
-                doc.setUpdatedBy(caller.getId());
-                documentRepository.save(doc);
-            });
+            documentRepository.findById(req.contractDocumentId())
+                    .filter(doc -> doc.getDocType() == DocType.CONTRACT && doc.getEmployee() == null)
+                    .ifPresent(doc -> {
+                        doc.setEmployee(savedEmp);
+                        doc.setUpdatedAt(now);
+                        doc.setUpdatedBy(caller.getId());
+                        documentRepository.save(doc);
+                    });
         }
 
         // 5. Create contract
@@ -358,8 +390,8 @@ public class OnboardingService {
             contract.setEndDate(LocalDate.parse(req.endDate()));
         }
         contract.setHoursPerWeek(req.hoursPerWeek().shortValue());
-        final short probMo = req.probationMonths() != null ? req.probationMonths().shortValue() : 0;
-        contract.setProbationMonths(probMo);
+        // probationMonths is required (@NotNull) — "None" is an explicit 0, never a silent default
+        contract.setProbationMonths(req.probationMonths().shortValue());
         contract.setCurrent(true);
         contract.setCreatedAt(now);
         contract.setCreatedBy(caller.getId());
@@ -536,8 +568,32 @@ public class OnboardingService {
                 onb.getItSentAt() != null ? onb.getItSentAt().toString() : null,
                 (int) total, (int) done, canComplete,
                 onb.getVersion(),
-                toDetails(emp, contract, onb)
+                toDetails(emp, contract, onb),
+                toItRequest(onb, items)
         );
+    }
+
+    /**
+     * Everything step 2 captured, so the IT request form can be shown again.
+     * Accessories and accounts are not stored on the onboarding row: they exist as
+     * checklist items (D-05), so they are read back from the open or done items.
+     */
+    private static ItRequestDto toItRequest(final Onboarding onb, final List<ChecklistItem> items) {
+        final List<String> accessories = itemNames(items, ChecklistSection.EQUIPMENT_ISSUED);
+        final List<String> accounts = itemNames(items, ChecklistSection.ACCOUNTS_INSTALLATIONS);
+        return new ItRequestDto(
+                onb.getItLaptopModel(), onb.getItKeyboardLayout(),
+                onb.getItReadyBy() != null ? onb.getItReadyBy().toString() : null,
+                onb.getItDeliveryMethod() != null ? onb.getItDeliveryMethod().name() : null,
+                onb.getItNotes(), accessories, accounts
+        );
+    }
+
+    private static List<String> itemNames(final List<ChecklistItem> items, final ChecklistSection section) {
+        return items.stream()
+                .filter(i -> i.getSection() == section && i.getStatus() != ChecklistItemStatus.CANCELLED)
+                .map(ChecklistItem::getName)
+                .toList();
     }
 
     /** Everything step 1 captured, so the form can be shown again after creation. */
@@ -587,7 +643,7 @@ public class OnboardingService {
                 .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
                         "No current contract for employee " + employeeId));
 
-        final String before = "{\"name\":\"" + emp.getFirstName() + " " + emp.getLastName() + "\"}";
+        final String before = detailsSnapshot(emp, contract);
         final OffsetDateTime now = OffsetDateTime.now(clock);
 
         // Explicit optimistic-lock version check (R-DB-5).
@@ -597,6 +653,23 @@ public class OnboardingService {
         if (req.version() != null && !req.version().equals(emp.getVersion())) {
             throw new ApiException(ErrorCodes.STALE_VERSION, HttpStatus.CONFLICT,
                     "Version conflict — reload and retry");
+        }
+
+        // Cross-field contract checks, same rules and messages as A10 (R-SRC-3). The contract
+        // type cannot change after creation, so it comes from the current contract row.
+        final LocalDate newStart = req.startDate() != null ? LocalDate.parse(req.startDate()) : contract.getStartDate();
+        final boolean fixedTerm = contract.getContractType() == ContractType.FIXED_TERM;
+        if (fixedTerm) {
+            final LocalDate newEnd = req.endDate() != null && !req.endDate().isBlank()
+                    ? LocalDate.parse(req.endDate()) : contract.getEndDate();
+            if (newEnd == null) {
+                throw ApiException.fieldValidation(List.of(
+                        Map.of("field", "endDate", "message", "This field is required.")));
+            }
+            if (!newEnd.isAfter(newStart)) {
+                throw ApiException.fieldValidation(List.of(
+                        Map.of("field", "endDate", "message", "The end date must be after the start date.")));
+            }
         }
 
         // Update employee fields
@@ -611,23 +684,49 @@ public class OnboardingService {
         employeeRepository.save(emp);
 
         // Update contract fields
-        final boolean startDateChanged = req.startDate() != null
-                && !LocalDate.parse(req.startDate()).equals(contract.getStartDate());
-        if (req.startDate() != null) contract.setStartDate(LocalDate.parse(req.startDate()));
-        if (req.endDate() != null) contract.setEndDate(LocalDate.parse(req.endDate()));
+        final LocalDate oldStart = contract.getStartDate();
+        final boolean startDateChanged = !newStart.equals(oldStart);
+        contract.setStartDate(newStart);
+        // A PERMANENT contract never has an end date (DB CHECK); an end date sent for one is ignored
+        if (fixedTerm && req.endDate() != null && !req.endDate().isBlank()) {
+            contract.setEndDate(LocalDate.parse(req.endDate()));
+        }
         if (req.hoursPerWeek() != null) contract.setHoursPerWeek(req.hoursPerWeek().shortValue());
         if (req.probationMonths() != null) contract.setProbationMonths(req.probationMonths().shortValue());
         contract.setUpdatedAt(now);
         contract.setUpdatedBy(caller.getId());
         contractRepository.save(contract);
 
+        // ONB-02: checklist due dates are relative to the start date, so a moved start date
+        // moves every still-open item by the same number of days; the HR "Onboarding checklist"
+        // engine task is due on the start date itself (D-19).
+        if (startDateChanged) {
+            final long deltaDays = java.time.temporal.ChronoUnit.DAYS.between(oldStart, newStart);
+            for (final ChecklistItem item : checklistItemRepository
+                    .findByEmployeeIdAndPhase(employeeId, ChecklistPhase.ONBOARDING)) {
+                if (item.getStatus() == ChecklistItemStatus.OPEN) {
+                    item.setDueDate(item.getDueDate().plusDays(deltaDays));
+                    item.setUpdatedAt(now);
+                    item.setUpdatedBy(caller.getId());
+                    checklistItemRepository.save(item);
+                }
+            }
+            engineTaskRepository.findOpenByEmployeeId(employeeId).stream()
+                    .filter(t -> TASK_ONBOARDING_CHECKLIST.equals(t.getTaskName()))
+                    .forEach(t -> {
+                        t.setDueDate(newStart);
+                        t.setUpdatedAt(now);
+                        t.setUpdatedBy(caller.getId());
+                        engineTaskRepository.save(t);
+                    });
+        }
+
         auditLogService.record(emp, "EMPLOYEE", emp.getId(), "UPDATE_DETAILS",
-                caller, before, "{\"name\":\"" + emp.getFirstName() + " " + emp.getLastName() + "\"}");
+                caller, before, detailsSnapshot(emp, contract));
 
         // If start date changed, update case-file after commit (R-ARC-5)
         if (startDateChanged) {
             final String caseId = emp.getEmployeeCode();
-            final LocalDate newStart = contract.getStartDate();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
@@ -639,6 +738,22 @@ public class OnboardingService {
                     }
                 }
             });
+        }
+    }
+
+    /** JSON snapshot of the A12-editable fields for the audit_log before/after (R-API-5). */
+    private String detailsSnapshot(final Employee emp, final Contract contract) {
+        final Map<String, Object> m = new LinkedHashMap<>();
+        m.put("firstName", emp.getFirstName());
+        m.put("lastName", emp.getLastName());
+        m.put("startDate", contract.getStartDate() != null ? contract.getStartDate().toString() : null);
+        m.put("endDate", contract.getEndDate() != null ? contract.getEndDate().toString() : null);
+        m.put("hoursPerWeek", contract.getHoursPerWeek());
+        m.put("probationMonths", contract.getProbationMonths());
+        try {
+            return objectMapper.writeValueAsString(m);
+        } catch (final JsonProcessingException ex) {
+            return "{}";
         }
     }
 
@@ -741,12 +856,19 @@ public class OnboardingService {
             }
         }
 
-        // Email outbox: IT equipment request
-        emailOutboxService.enqueue("IT_EQUIPMENT_REQUEST",
-                "it-admin@cubeworks.internal",
-                "Equipment request for " + emp.getFirstName() + " " + emp.getLastName(),
-                "Please provision equipment for " + emp.getFirstName() + ".",
-                emp);
+        // Email outbox: IT equipment request — one row per active IT admin (FRD-08 recipient
+        // "IT admin"); nobody to send to is logged, not an error (the IT task still exists).
+        final List<Employee> itAdmins = employeeRepository.findActiveByAppRole(AppRole.IT_ADMIN);
+        if (itAdmins.isEmpty()) {
+            log.warn("No active IT admin to receive the IT equipment request for employee {}", employeeId);
+        }
+        for (final Employee itAdmin : itAdmins) {
+            final String to = itAdmin.getWorkEmail() != null ? itAdmin.getWorkEmail() : itAdmin.getPrivateEmail();
+            emailOutboxService.enqueue("IT_EQUIPMENT_REQUEST", to,
+                    "Equipment request for " + emp.getFirstName() + " " + emp.getLastName(),
+                    "Please provision equipment for " + emp.getFirstName() + ".",
+                    emp);
+        }
 
         auditLogService.record(emp, "ONBOARDING", onb.getId(),
                 "SEND_IT_REQUEST", caller, null, "{\"sentAt\":\"" + now + "\"}");
@@ -823,11 +945,11 @@ public class OnboardingService {
 
         // Additional filters
         if (ownerFilter != null) {
-            final OwnerRole ownerRole = OwnerRole.valueOf(ownerFilter);
+            final OwnerRole ownerRole = parseFilter(OwnerRole.class, ownerFilter, "ownerFilter");
             items = items.stream().filter(i -> i.getOwnerRole() == ownerRole).collect(Collectors.toList());
         }
         if (statusFilter != null) {
-            final ChecklistItemStatus status = ChecklistItemStatus.valueOf(statusFilter);
+            final ChecklistItemStatus status = parseFilter(ChecklistItemStatus.class, statusFilter, "statusFilter");
             items = items.stream().filter(i -> i.getStatus() == status).collect(Collectors.toList());
         }
 
@@ -858,6 +980,16 @@ public class OnboardingService {
                 sections,
                 mandatoryOpen == 0
         );
+    }
+
+    /** Parses an A15 filter value; an unknown value is a 400, not a 500. */
+    private static <E extends Enum<E>> E parseFilter(final Class<E> type, final String value, final String field) {
+        try {
+            return Enum.valueOf(type, value);
+        } catch (final IllegalArgumentException ex) {
+            throw ApiException.fieldValidation(List.of(
+                    Map.of("field", field, "message", "This field is required.")));
+        }
     }
 
     /** Whether an item counts towards checklist progress: mandatory and not cancelled. */
@@ -1030,8 +1162,7 @@ public class OnboardingService {
         }
 
         // Find the HR onboarding task
-        final EngineTask task = engineTaskRepository.findOpenTaskByName(
-                        employeeId, TASK_ONBOARDING_CHECKLIST)
+        final EngineTask task = findCompletableTask(employeeId, TASK_ONBOARDING_CHECKLIST)
                 .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
                         "Onboarding checklist task not found for employee " + employeeId));
 
@@ -1065,7 +1196,7 @@ public class OnboardingService {
                 "COMPLETE_ONBOARDING_PENDING", caller, null,
                 "{\"undoUntil\":\"" + undoUntil + "\"}");
 
-        return new UndoWindowResult(undoUntil.toString());
+        return new UndoWindowResult(undoUntil.toString(), task.getId());
     }
 
     // ── A20 IT equipment request view ─────────────────────────────────────────
@@ -1124,8 +1255,7 @@ public class OnboardingService {
     @PreAuthorize("hasRole('IT_ADMIN')")
     public UndoWindowResult completeEquipmentRequest(final Long employeeId, final Employee caller) {
         selfActionGuard.forbidSelf(caller, employeeId);
-        final EngineTask task = engineTaskRepository.findOpenTaskByName(
-                        employeeId, TASK_EQUIPMENT_REQUEST)
+        final EngineTask task = findCompletableTask(employeeId, TASK_EQUIPMENT_REQUEST)
                 .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
                         "Equipment request task not found for employee " + employeeId));
 
@@ -1147,7 +1277,7 @@ public class OnboardingService {
         task.setUpdatedBy(caller.getId());
         engineTaskRepository.save(task);
 
-        return new UndoWindowResult(undoUntil.toString());
+        return new UndoWindowResult(undoUntil.toString(), task.getId());
     }
 
     /**
@@ -1171,8 +1301,7 @@ public class OnboardingService {
                     "Tick all mandatory items first.");
         }
 
-        final EngineTask task = engineTaskRepository.findOpenTaskByName(
-                        employeeId, TASK_REMAINING_SETUP)
+        final EngineTask task = findCompletableTask(employeeId, TASK_REMAINING_SETUP)
                 .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
                         "Remaining setup task not found for employee " + employeeId));
 
@@ -1189,7 +1318,7 @@ public class OnboardingService {
         task.setUpdatedBy(caller.getId());
         engineTaskRepository.save(task);
 
-        return new UndoWindowResult(undoUntil.toString());
+        return new UndoWindowResult(undoUntil.toString(), task.getId());
     }
 
     // ── A25 Employee's own onboarding ─────────────────────────────────────────
@@ -1260,13 +1389,40 @@ public class OnboardingService {
     @Transactional
     @PreAuthorize("hasRole('EMPLOYEE')")
     public void acknowledgePolicy(final Long itemId, final boolean accepted, final Employee caller) {
+        final ChecklistItem item = findItemOrThrow(itemId);
+        if (!caller.getId().equals(item.getEmployee().getId())) {
+            throw new ApiException(ErrorCodes.FORBIDDEN, HttpStatus.FORBIDDEN,
+                    "You can only acknowledge your own policies");
+        }
+        if (item.getItemKind() != ItemKind.POLICY_ACK) {
+            throw new ApiException(ErrorCodes.CONFLICT, HttpStatus.CONFLICT,
+                    "This checklist item is not a policy acknowledgement.");
+        }
         if (!accepted) {
             // Must return {"code":"VALIDATION_FAILED","errors":[{"message":"..."}]} (R-API-3, AC-14)
             throw ApiException.fieldValidation(
                     List.of(Map.of("message", "Confirm that you have read the policy.")));
         }
-        // Tick the item
+        // Tick the item (ownership, G-13 and the completed-onboarding lock are checked there)
         tickItem(itemId, caller);
+
+        // FRD-02 §4.5: the acknowledgement is kept as a document (doc_type POLICY_ACK) on the
+        // employee's record — a small text receipt naming the policy, the employee and the time.
+        final OffsetDateTime now = OffsetDateTime.now(clock);
+        final Document policyDoc = item.getTemplateItem() != null
+                ? item.getTemplateItem().getPolicyDocument() : null;
+        final String policyName = policyDoc != null ? policyDoc.getFileName() : item.getName();
+        final String receipt = "Policy acknowledgement\n"
+                + "Policy: " + policyName + "\n"
+                + "Checklist item: " + item.getName() + "\n"
+                + "Employee: " + caller.getEmployeeCode() + "\n"
+                + "Statement: I have read and accept this policy\n"
+                + "Acknowledged at: " + now + "\n";
+        final Document savedAck = documentService.storeGenerated(item.getEmployee(), DocType.POLICY_ACK,
+                "policy-acknowledgement-" + itemId + ".txt", "text/plain",
+                receipt.getBytes(java.nio.charset.StandardCharsets.UTF_8), caller);
+        auditLogService.record(item.getEmployee(), "DOCUMENT", savedAck.getId(), "ACKNOWLEDGE_POLICY",
+                caller, null, "{\"docType\":\"POLICY_ACK\",\"checklistItemId\":" + itemId + "}");
     }
 
     // ── A28 Confirm equipment ─────────────────────────────────────────────────
@@ -1285,8 +1441,41 @@ public class OnboardingService {
     @PreAuthorize("hasRole('EMPLOYEE')")
     public void confirmEquipment(final Long itemId, final List<Long> receivedAssetIds,
                                   final String remarks, final Employee caller) {
+        final ChecklistItem confirmItem = findItemOrThrow(itemId);
+        if (!caller.getId().equals(confirmItem.getEmployee().getId())) {
+            throw new ApiException(ErrorCodes.FORBIDDEN, HttpStatus.FORBIDDEN,
+                    "You can only confirm your own equipment");
+        }
+        if (confirmItem.getItemKind() != ItemKind.EQUIPMENT_CONFIRM) {
+            throw new ApiException(ErrorCodes.CONFLICT, HttpStatus.CONFLICT,
+                    "This checklist item is not an equipment confirmation.");
+        }
+        // Every confirmed asset must be one currently issued to the caller (asset: read, §4.5)
+        final Set<Long> issuedIds = assetRepository.findIssuedToEmployee(caller.getId()).stream()
+                .map(Asset::getId).collect(Collectors.toSet());
+        final List<Long> received = receivedAssetIds != null ? receivedAssetIds : List.of();
+        if (!issuedIds.containsAll(received)) {
+            throw new ApiException(ErrorCodes.FORBIDDEN, HttpStatus.FORBIDDEN,
+                    "Only equipment issued to you can be confirmed");
+        }
+
         // Tick the confirm-equipment item
         tickItem(itemId, caller);
+
+        // Record which issued assets were confirmed as received and which were not (R-API-5)
+        final Map<String, Object> details = new LinkedHashMap<>();
+        details.put("receivedAssetIds", received.stream().distinct().sorted().toList());
+        details.put("notReceivedAssetIds",
+                issuedIds.stream().filter(id -> !received.contains(id)).sorted().toList());
+        details.put("hasRemarks", remarks != null && !remarks.isBlank());
+        String detailsJson;
+        try {
+            detailsJson = objectMapper.writeValueAsString(details);
+        } catch (final JsonProcessingException ex) {
+            detailsJson = "{}";
+        }
+        auditLogService.record(confirmItem.getEmployee(), "checklist_item", itemId,
+                "CONFIRM_EQUIPMENT", caller, null, detailsJson);
 
         // If remarks given, notify every IT_ADMIN (AC-13).
         // The notification.employee_id is set to the IT admin (recipient) so the test query
@@ -1385,6 +1574,15 @@ public class OnboardingService {
         }
     }
 
+    /**
+     * Finds the open engine task that can (still or again) be completed: not completed and not
+     * inside a pending undo window. An {@code UNDONE} task counts (a completion undone via A37
+     * can be redone); a {@code FAILED} one does not — {@code UndoWindowScheduler} retries it.
+     */
+    private Optional<EngineTask> findCompletableTask(final Long employeeId, final String taskName) {
+        return engineTaskRepository.findOpenTaskByName(employeeId, taskName);
+    }
+
     private void checkNotCompleted(final Long employeeId) {
         onboardingRepository.findByEmployeeId(employeeId).ifPresent(onb -> {
             if (onb.getStatus() == OnboardingStatus.COMPLETED) {
@@ -1392,6 +1590,56 @@ public class OnboardingService {
                         "Cannot tick/untick items after onboarding is completed");
             }
         });
+    }
+
+    /**
+     * Re-evaluates {@code Onboarding.mandatoryItemsDone} after a checklist item changed outside
+     * A17/A18 (asset recorded or removed by IT), the same way ticking does.
+     *
+     * @param emp the onboarding employee
+     */
+    public void refreshMandatoryItemsDone(final Employee emp) {
+        updateMandatoryItemsDone(emp);
+    }
+
+    /**
+     * Ticks the employee's open PROFILE checklist item(s) once their own profile is complete
+     * (FRD-02 §4.5 "PATCH /me/contact — employee, checklist_item (PROFILE)"; spec S10: "ticks
+     * the PROFILE checklist item once the emergency contact is complete"). Does nothing when
+     * there is no in-progress onboarding or no open PROFILE item.
+     *
+     * <p>Called from {@code EmployeeService.updateMyProfile} inside its transaction.</p>
+     *
+     * @param emp the employee whose own profile was just saved (always the caller — WS-03)
+     */
+    @Transactional
+    public void tickProfileItemsOnProfileSaved(final Employee emp) {
+        final boolean complete = emp.getEmergencyName() != null && !emp.getEmergencyName().isBlank()
+                && emp.getEmergencyPhone() != null && !emp.getEmergencyPhone().isBlank();
+        if (!complete) return;
+        final Optional<Onboarding> onb = onboardingRepository.findByEmployeeId(emp.getId());
+        if (onb.isEmpty() || onb.get().getStatus() == OnboardingStatus.COMPLETED) return;
+
+        final List<ChecklistItem> open = checklistItemRepository
+                .findByEmployeeIdAndPhaseAndOwnerRole(emp.getId(), ChecklistPhase.ONBOARDING,
+                        OwnerRole.EMPLOYEE)
+                .stream()
+                .filter(i -> i.getItemKind() == ItemKind.PROFILE
+                        && i.getStatus() == ChecklistItemStatus.OPEN)
+                .toList();
+        if (open.isEmpty()) return;
+        final OffsetDateTime now = OffsetDateTime.now(clock);
+        for (final ChecklistItem item : open) {
+            item.setStatus(ChecklistItemStatus.DONE);
+            item.setDoneAt(now);
+            item.setDoneBy(emp);
+            item.setUpdatedAt(now);
+            item.setUpdatedBy(emp.getId());
+            checklistItemRepository.save(item);
+            auditLogService.record(emp, "checklist_item", item.getId(), "TICK_ITEM", emp,
+                    "{\"status\":\"OPEN\"}", "{\"status\":\"DONE\"}", "profile completed");
+        }
+        updateMandatoryItemsDone(emp);
     }
 
     private void updateMandatoryItemsDone(final Employee emp) {
@@ -1442,7 +1690,8 @@ public class OnboardingService {
         item.setName(name);
         item.setSection(section);
         item.setOwnerRole(OwnerRole.IT_ADMIN);
-        item.setItemKind(ItemKind.GENERIC);
+        // FRD-02 §4.2: Send to IT creates EQUIPMENT and ACCOUNT items
+        item.setItemKind(section == ChecklistSection.EQUIPMENT_ISSUED ? ItemKind.EQUIPMENT : ItemKind.ACCOUNT);
         item.setMandatory(true);
         item.setDueDate(startDate);
         item.setStatus(ChecklistItemStatus.OPEN);
@@ -1479,6 +1728,53 @@ public class OnboardingService {
         return jobTitleRepository.findById(id)
                 .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND,
                         "Job title " + id + " not found"));
+    }
+
+    /**
+     * R-ARC-5 retry for a case start that never reached the engine: {@code createOnboarding}'s
+     * afterCommit {@code startCase} only logs a failure, so the employee's open tasks then point at
+     * a case the engine does not have (found live 2026-10-21: E-0016, E-0017 and EMP107 had no
+     * engine case). Called by {@code EngineTaskWatcher} when the engine answers 404 for the case.
+     * Starts the case with the same initial case file, then replays what the database already
+     * knows (IT request sent, mandatory items done) so the engine reaches the same point; the
+     * watcher then resolves the open tasks' real ids by name. Only for onboardings still in
+     * progress — a completed onboarding cannot be replayed faithfully and is logged instead.
+     *
+     * @param employeeCode the case id (= employee_code)
+     */
+    @Transactional(readOnly = true)
+    public void restartMissingCase(final String employeeCode) {
+        final Employee emp = employeeRepository.findByEmployeeCode(employeeCode).orElse(null);
+        if (emp == null) {
+            return;
+        }
+        final Onboarding onb = onboardingRepository.findByEmployeeId(emp.getId()).orElse(null);
+        final Contract contract = contractRepository.findByEmployeeIdAndIsCurrentTrue(emp.getId()).orElse(null);
+        if (onb == null || contract == null || onb.getStatus() != OnboardingStatus.IN_PROGRESS) {
+            log.error("Engine case {} is missing and cannot be restarted (onboarding not in progress)", employeeCode);
+            return;
+        }
+        final int overdueDays = settingRepository.findById("ONBOARDING_OVERDUE")
+                .map(s -> s.getValueInt() != null ? s.getValueInt() : 3).orElse(3);
+        caseEngineClient.startCase(employeeCode,
+                buildInitialCaseFile(employeeCode, contract, emp, contract.getStartDate().plusDays(overdueDays)));
+        log.warn("Restarted missing engine case {}", employeeCode);
+
+        final boolean itSent = onb.getItStatus() != null && onb.getItStatus() != ItStatus.NOT_SENT;
+        final boolean mandatoryDone = checklistItemRepository.countOpenMandatoryItems(
+                emp.getId(), ChecklistPhase.ONBOARDING) == 0;
+        final Map<String, Object> replay = new HashMap<>();
+        replay.put("mandatoryItemsDone", mandatoryDone);
+        if (itSent) {
+            replay.put("itRequestSent", true);
+            if (onb.getItReadyBy() != null) {
+                replay.put("itReadyBy", onb.getItReadyBy().toString());
+            }
+        }
+        caseEngineClient.updateCaseFile(employeeCode, "Onboarding", replay);
+        if (itSent) {
+            caseEngineClient.startPlanItem(employeeCode, TASK_EQUIPMENT_REQUEST);
+        }
     }
 
     private Map<String, Object> buildInitialCaseFile(final String empCode, final Contract contract,
@@ -1610,7 +1906,8 @@ public class OnboardingService {
                                        String status, String itStatus, String itSentAt,
                                        int totalItems, int doneItems, boolean canComplete,
                                        Integer version,
-                                       OnboardingDetailsDto details) {}
+                                       OnboardingDetailsDto details,
+                                       ItRequestDto itRequest) {}
 
     /**
      * Step-1 values of an onboarding (A11), for re-showing the Employee details form.
@@ -1656,8 +1953,11 @@ public class OnboardingService {
     /** Result of ticking or unticking a checklist item (A17/A18). */
     public record TickResultDto(ChecklistItemDto item, boolean allMandatoryDone) {}
 
-    /** Undo window result for completing a task (A19, A23, A24). */
-    public record UndoWindowResult(String undoUntil) {}
+    /**
+     * Undo window result for completing a task (A19, A23, A24): {@code taskId} is the
+     * {@code engine_task.id} that A37 ({@code POST /api/tasks/{taskId}/undo}) takes.
+     */
+    public record UndoWindowResult(String undoUntil, Long taskId) {}
 
     /** Equipment request view (A20). */
     public record EquipmentRequestDto(String employeeName, String laptopModel, String keyboardLayout,
@@ -1709,12 +2009,14 @@ public class OnboardingService {
             @jakarta.validation.constraints.NotNull(message = "This field is required.")
             @jakarta.validation.constraints.Min(value = 1, message = "Hours must be between 1 and 40.")
             @jakarta.validation.constraints.Max(value = 40, message = "Hours must be between 1 and 40.") Integer hoursPerWeek,
-            Integer probationMonths,
+            @jakarta.validation.constraints.NotNull(message = "This field is required.")
+            @jakarta.validation.constraints.Min(value = 0, message = "This field is required.")
+            @jakarta.validation.constraints.Max(value = 2, message = "This field is required.") Integer probationMonths,
             boolean idChecked, boolean contractSignedReceived, Boolean rightToWorkVerified,
             Long contractDocumentId,
             @jakarta.validation.constraints.NotNull(message = "This field is required.") Long jobTitleId,
             @jakarta.validation.constraints.NotNull(message = "This field is required.") Long departmentId,
-            Long managerId,
+            @jakarta.validation.constraints.NotNull(message = "This field is required.") Long managerId,
             @jakarta.validation.constraints.NotBlank(message = "This field is required.") String grade,
             @jakarta.validation.constraints.NotBlank(message = "This field is required.") String appRole,
             Long buddyId,
@@ -1727,11 +2029,32 @@ public class OnboardingService {
      * <p>{@code version} is the optimistic-lock version the caller read from the server.
      * If it does not match the DB row the service throws a stale-version conflict (R-DB-5).</p>
      */
-    public record UpdateDetailsRequest(String firstName, String lastName, String mobilePhone,
-                                        String street, String postcode, String city,
-                                        String startDate, String endDate,
-                                        Integer hoursPerWeek, Integer probationMonths,
-                                        Integer version) {}
+    public record UpdateDetailsRequest(
+            @jakarta.validation.constraints.Pattern(regexp = NOT_BLANK, message = "This field is required.") String firstName,
+            @jakarta.validation.constraints.Pattern(regexp = NOT_BLANK, message = "This field is required.") String lastName,
+            @jakarta.validation.constraints.Pattern(regexp = "\\+[0-9 ]{5,20}",
+                    message = "Enter a valid phone number, e.g. +31 6 12345678.") String mobilePhone,
+            @jakarta.validation.constraints.Pattern(regexp = NOT_BLANK, message = "This field is required.") String street,
+            @jakarta.validation.constraints.Pattern(regexp = "[0-9]{4} [A-Z]{2}",
+                    message = "Enter a valid postcode, e.g. 3511 AV.") String postcode,
+            @jakarta.validation.constraints.Pattern(regexp = NOT_BLANK, message = "This field is required.") String city,
+            @jakarta.validation.constraints.Pattern(regexp = NOT_BLANK, message = "This field is required.") String startDate,
+            String endDate,
+            @jakarta.validation.constraints.Min(value = 1, message = "Hours must be between 1 and 40.")
+            @jakarta.validation.constraints.Max(value = 40, message = "Hours must be between 1 and 40.") Integer hoursPerWeek,
+            @jakarta.validation.constraints.Min(value = 0, message = "This field is required.")
+            @jakarta.validation.constraints.Max(value = 2, message = "This field is required.") Integer probationMonths,
+            Integer version) {}
+
+    /**
+     * Bean Validation regex for "optional, but not blank when sent" on A12's partial-update
+     * fields ({@code @Pattern} ignores {@code null}, so an omitted field is left unchanged).
+     */
+    static final String NOT_BLANK = "(?s).*\\S.*";
+
+    /** A saved onboarding draft (A09a): {@code form} is the parsed {@code onboarding_draft.form}. */
+    public record DraftDto(Long id, String firstName, String lastName,
+                           com.fasterxml.jackson.databind.JsonNode form) {}
 
     /**
      * Typed exception for duplicate email (carries existingEmployeeId for the 409 body).

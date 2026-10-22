@@ -87,6 +87,8 @@ export function MyProfile(): ReactElement {
     onSuccess: () => {
       showToast('Profile saved.')
       void queryClient.invalidateQueries({ queryKey: ['my-profile'] })
+      // Saving a complete profile ticks the onboarding PROFILE item (FRD-02 §4.5)
+      void queryClient.invalidateQueries({ queryKey: ['my-onboarding'] })
     },
     onError: (err: unknown) => {
       if (err instanceof ApiResponseError && err.body.code === 'VALIDATION_FAILED') {

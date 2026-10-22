@@ -63,6 +63,23 @@ public class DocumentStorageService {
     }
 
     /**
+     * Stores generated content (e.g. a policy-acknowledgement receipt) and returns a unique
+     * storage key, the same way {@link #store(MultipartFile)} does for uploads.
+     *
+     * @param content the bytes to store
+     * @return a UUID string that can later be passed to {@link #retrieve}
+     * @throws IOException if writing to the filesystem fails
+     */
+    public String store(final byte[] content) throws IOException {
+        final Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Files.createDirectories(dir);
+        final String key = UUID.randomUUID().toString();
+        Files.write(dir.resolve(key), content);
+        log.info("Stored generated document with key={} size={} bytes", key, content.length);
+        return key;
+    }
+
+    /**
      * Retrieves a stored document by its storage key.
      *
      * @param storageKey the UUID key assigned at upload time

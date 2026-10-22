@@ -23,6 +23,7 @@
 
 import { useRef } from 'react'
 import type { ChangeEvent, ReactElement } from 'react'
+import { toDisplayDateOrEmpty, toIsoDateOrEmpty } from '../../lib/date'
 
 interface SelectOption {
   value: string
@@ -56,17 +57,6 @@ const baseInput =
 
 const errorInput = 'border-red-500 focus-visible:ring-red-500'
 
-/** "dd-mm-yyyy" -> "yyyy-mm-dd" for the native picker; "" when not a full date yet. */
-function displayToIso(display: string): string {
-  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(display)
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
-}
-
-/** "yyyy-mm-dd" from the native picker -> "dd-mm-yyyy" (R-UI-5 display format). */
-function isoToDisplay(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : ''
-}
 
 function CalendarIcon(): ReactElement {
   return (
@@ -235,10 +225,10 @@ export function Field({
             type="date"
             tabIndex={-1}
             aria-hidden="true"
-            value={displayToIso(String(value ?? ''))}
+            value={toIsoDateOrEmpty(String(value ?? ''))}
             min={min !== undefined ? String(min) : undefined}
             max={max !== undefined ? String(max) : undefined}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange?.(isoToDisplay(e.target.value))}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onChange?.(toDisplayDateOrEmpty(e.target.value))}
             // Spans the field's width at its bottom edge: the browser anchors the calendar
             // popup to this element, so it opens directly under the field
             className="absolute left-0 bottom-0 w-full h-0 p-0 border-0 opacity-0 pointer-events-none"

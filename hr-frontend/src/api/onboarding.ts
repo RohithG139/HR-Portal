@@ -118,7 +118,10 @@ export interface TickResultDto {
 
 /** Undo window result (A19, A23, A24). */
 export interface UndoWindowResult {
+  /** ISO-8601 instant until which the completion can be undone (R-API-6). */
   undoUntil: string
+  /** engine_task id to pass to A37 `POST /api/tasks/{taskId}/undo`. */
+  taskId: number
 }
 
 /** IT send result (A14). */
@@ -228,6 +231,19 @@ export function updateDraft(draftId: number, request: DraftRequest): Promise<voi
   return apiPut<void>(`/onboarding-drafts/${draftId}`, request)
 }
 
+/** A saved draft (A09a, OnboardingService.DraftDto): `form` is what step 1 last saved. */
+export interface DraftDto {
+  id: number
+  firstName: string
+  lastName: string
+  form: Record<string, unknown>
+}
+
+/** A09a — Read a draft to resume step 1 with every saved field (D-23). */
+export function getDraft(draftId: number): Promise<DraftDto> {
+  return apiGet<DraftDto>(`/onboarding-drafts/${draftId}`)
+}
+
 /** A10 — Create full onboarding (employee + contract + checklist). */
 export function createOnboarding(request: CreateOnboardingRequest): Promise<CreateOnboardingResult> {
   return apiPost<CreateOnboardingResult>('/onboardings', request)
@@ -261,9 +277,10 @@ export function getChecklist(
   employeeId: number,
   params?: { owner?: string; status?: string },
 ): Promise<ChecklistDto> {
+  // Query-param names match OnboardingController.getChecklist (ownerFilter/statusFilter)
   const qs = new URLSearchParams()
-  if (params?.owner !== undefined) qs.set('owner', params.owner)
-  if (params?.status !== undefined) qs.set('status', params.status)
+  if (params?.owner !== undefined) qs.set('ownerFilter', params.owner)
+  if (params?.status !== undefined) qs.set('statusFilter', params.status)
   const q = qs.toString()
   return apiGet<ChecklistDto>(`/onboardings/${employeeId}/checklist${q ? `?${q}` : ''}`)
 }

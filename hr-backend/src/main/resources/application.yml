@@ -16,6 +16,13 @@ spring:
       pool:
         size: 5
 
+  servlet:
+    multipart:
+      # A07 contract scans / policy PDFs. Spring's 1 MB default rejected ordinary scans (found
+      # live 2026-10-22); oversize files get a 400 on field "file" (GlobalExceptionHandler).
+      max-file-size: 10MB
+      max-request-size: 11MB
+
   datasource:
     # PostgreSQL on the HR app's own compose project (docker-compose.yml at repo root, port 5433).
     # Not the CaseFabric engine's Postgres instance (port 5431) — those two are never shared.

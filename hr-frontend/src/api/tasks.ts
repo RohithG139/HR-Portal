@@ -26,6 +26,12 @@ export interface TaskItemDto {
   employeeName: string | null
   /** Who created the task; null = created by the system. */
   raisedBy: string | null
+  /** Which table taskId belongs to (OPEN-02); only ENGINE_TASK ids can be undone (A37). */
+  entityType: 'ENGINE_TASK' | 'CHECKLIST_ITEM'
+  /** The employee's code (FRD-02 Screen 12/13 routes use :code). */
+  employeeCode: string | null
+  /** engine_task.related_id — for probation tasks the review id. */
+  relatedId: number | null
 }
 
 /** Paginated task list (A36, TaskService.TaskPageDto). */

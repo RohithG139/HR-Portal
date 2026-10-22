@@ -16,6 +16,16 @@ import org.springframework.data.repository.query.Param;
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
     /**
+     * Whether any notification with this title was already raised about this employee.
+     * Used to raise one-off alerts (e.g. "Onboarding overdue") exactly once.
+     *
+     * @param employeeId the employee the notification is about
+     * @param title      the exact notification title
+     * @return true if at least one such notification exists
+     */
+    boolean existsByEmployee_IdAndTitle(Long employeeId, String title);
+
+    /**
      * Returns a page of notifications for the given recipient, most recent first.
      *
      * <p>Optionally filtered to unread-only when {@code unreadOnly = true}.</p>

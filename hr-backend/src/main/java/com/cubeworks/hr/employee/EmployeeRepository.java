@@ -24,15 +24,31 @@ import java.util.Optional;
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     /**
-     * Finds an employee by their unique private e-mail address.
+     * Finds an employee by private e-mail address, ignoring case (ONB-09 duplicate check).
      *
-     * <p>Used for duplicate-e-mail validation before creating a new employee, and for
-     * looking up an existing employee from an invitation acceptance token (ONB-09).</p>
+     * <p>E-mail addresses are compared case-insensitively ({@code lower()} on both sides), so
+     * "Jesse@Outlook.com" is detected as a duplicate of "jesse@outlook.com".</p>
      *
      * @param privateEmail the private e-mail address to look up
      * @return the matching employee, if any
      */
-    Optional<Employee> findByPrivateEmail(String privateEmail);
+    @Query("SELECT e FROM Employee e WHERE lower(e.privateEmail) = lower(:privateEmail)")
+    Optional<Employee> findByPrivateEmailIgnoreCase(@Param("privateEmail") String privateEmail);
+
+    /**
+     * Returns every employee holding the given application role who can still receive
+     * e-mail: not archived and whose login account is not disabled (IT_EQUIPMENT_REQUEST recipients).
+     *
+     * @param appRole the application role
+     * @return matching employees
+     */
+    @Query("""
+            SELECT e FROM Employee e
+            WHERE e.appRole = :appRole
+              AND e.stage <> com.cubeworks.hr.employee.EmployeeStage.ARCHIVED
+              AND (e.accountStatus IS NULL OR e.accountStatus <> com.cubeworks.hr.employee.AccountStatus.DISABLED)
+            """)
+    List<Employee> findActiveByAppRole(@Param("appRole") AppRole appRole);
 
     /**
      * Finds an employee by their unique work e-mail address.
@@ -94,7 +110,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
      * @param stage        filter by stage, or null for all stages
      * @param departmentId filter by department, or null for all departments
      * @param managerId    filter by direct manager, or null for all managers
-     * @param q            case-insensitive free-text search on first/last name, or null to skip
+     * @param q            case-insensitive free-text search on full name or employee code, or null to skip
      * @param pageable     paging and sorting parameters
      * @return a page of matching employees with jobTitle and department loaded
      */
@@ -106,7 +122,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
               AND (:departmentId IS NULL OR e.department.id = :departmentId)
               AND (:managerId IS NULL OR e.manager.id = :managerId)
               AND (CAST(:q AS string) IS NULL
-                   OR LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
+                   OR LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+                   OR LOWER(e.employeeCode) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
             """,
             countQuery = """
             SELECT COUNT(e) FROM Employee e
@@ -114,7 +131,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
               AND (:departmentId IS NULL OR e.department.id = :departmentId)
               AND (:managerId IS NULL OR e.manager.id = :managerId)
               AND (CAST(:q AS string) IS NULL
-                   OR LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
+                   OR LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+                   OR LOWER(e.employeeCode) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
             """)
     Page<Employee> findFiltered(
             @Param("stage") EmployeeStage stage,

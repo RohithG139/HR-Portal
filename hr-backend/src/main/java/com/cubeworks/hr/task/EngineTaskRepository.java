@@ -48,7 +48,7 @@ public interface EngineTaskRepository extends JpaRepository<EngineTask, Long> {
      */
     @Query("""
             SELECT t FROM EngineTask t
-            WHERE t.pendingStatus = 'PENDING'
+            WHERE t.pendingStatus IN ('PENDING', 'FAILED')
               AND t.pendingExecuteAt <= :now
             """)
     List<EngineTask> findExpiredPending(@Param("now") OffsetDateTime now);
@@ -64,6 +64,7 @@ public interface EngineTaskRepository extends JpaRepository<EngineTask, Long> {
      */
     @Query("""
             SELECT t FROM EngineTask t
+            JOIN FETCH t.employee
             WHERE t.completedAt IS NULL
               AND (:taskName IS NULL OR LOWER(t.taskName) LIKE LOWER(CONCAT('%', :taskName, '%')))
             ORDER BY t.dueDate ASC
@@ -147,7 +148,7 @@ public interface EngineTaskRepository extends JpaRepository<EngineTask, Long> {
             WHERE t.employee.id = :employeeId
               AND t.taskName = :taskName
               AND t.completedAt IS NULL
-              AND (t.pendingStatus IS NULL OR t.pendingStatus = 'FAILED')
+              AND (t.pendingStatus IS NULL OR t.pendingStatus = 'UNDONE')
             """)
     Optional<EngineTask> findOpenTaskByName(
             @Param("employeeId") Long employeeId,
@@ -163,6 +164,46 @@ public interface EngineTaskRepository extends JpaRepository<EngineTask, Long> {
      * @param cutoff tasks due on or before this date are remindable
      * @return remindable overdue tasks
      */
+    /**
+     * Open tasks with this exact name owned by one employee (a manager's "Probation review").
+     *
+     * @param ownerId  {@code engine_task.owner_employee_id}
+     * @param taskName exact task name
+     * @return open tasks, earliest due first
+     */
+    @Query("""
+            SELECT t FROM EngineTask t
+            JOIN FETCH t.employee
+            WHERE t.ownerEmployee.id = :ownerId
+              AND t.taskName = :taskName
+              AND t.completedAt IS NULL
+            ORDER BY t.dueDate ASC
+            """)
+    List<EngineTask> findOpenByOwnerAndTaskName(@Param("ownerId") Long ownerId,
+                                                @Param("taskName") String taskName);
+
+    /**
+     * Open tasks with this exact name about one employee (the employee's own
+     * "Create development plan").
+     *
+     * @param employeeId the employee the task is about
+     * @param taskName   exact task name
+     * @return open tasks, earliest due first
+     */
+    @Query("""
+            SELECT t FROM EngineTask t
+            JOIN FETCH t.employee
+            WHERE t.employee.id = :employeeId
+              AND t.taskName = :taskName
+              AND t.completedAt IS NULL
+            ORDER BY t.dueDate ASC
+            """)
+    List<EngineTask> findOpenByEmployeeAndTaskName(@Param("employeeId") Long employeeId,
+                                                   @Param("taskName") String taskName);
+
+    /** Whether any task (open or completed) with this name ever existed for the employee. */
+    boolean existsByEmployeeIdAndTaskName(Long employeeId, String taskName);
+
     @Query("""
             SELECT t FROM EngineTask t
             JOIN FETCH t.employee

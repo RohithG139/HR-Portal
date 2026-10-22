@@ -21,5 +21,9 @@ public record DashboardTaskDto(
         String dueDate,
         String dueState,
         // "First Last" of the employee the task is about, for "Task · Name" rows; may be null
-        String employeeName
+        String employeeName,
+        // employee code + engine_task.related_id: the probation task routes need both
+        // (FRD-02 Screen 12/13, /team/:code/probation-review?reviewId=)
+        String employeeCode,
+        Long relatedId
 ) {}

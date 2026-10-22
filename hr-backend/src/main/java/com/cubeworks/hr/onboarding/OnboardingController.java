@@ -25,6 +25,7 @@ import java.util.Map;
  *   <li>A06  {@code GET  /api/checklist-templates/{id}/preview}   — template preview (HR)</li>
  *   <li>A08  {@code POST /api/onboarding-drafts}                  — create draft (HR)</li>
  *   <li>A09  {@code PUT  /api/onboarding-drafts/{id}}             — update draft (HR)</li>
+ *   <li>A09a {@code GET  /api/onboarding-drafts/{id}}             — read draft to resume it (HR, D-23)</li>
  *   <li>A10  {@code POST /api/onboardings}                        — create employee (HR)</li>
  *   <li>A11  {@code GET  /api/onboardings/{employeeId}}           — get onboarding (HR)</li>
  *   <li>A12  {@code PUT  /api/onboardings/{employeeId}/details}   — update details (HR)</li>
@@ -91,10 +92,8 @@ public class OnboardingController {
         final Employee caller = currentUser.require();
         final String firstName = (String) body.get("firstName");
         final String lastName  = (String) body.get("lastName");
-        final String form = toJson(body.containsKey("privateEmail")
-                ? Map.of("privateEmail", body.get("privateEmail"))
-                : Map.of());
-        final long draftId = onboardingService.createDraft(firstName, lastName, form, caller);
+        final long draftId = onboardingService.createDraft(firstName, lastName,
+                toJson(extractForm(body)), caller);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("draftId", draftId));
     }
 
@@ -114,8 +113,39 @@ public class OnboardingController {
         onboardingService.updateDraft(id,
                 (String) body.getOrDefault("firstName", ""),
                 (String) body.getOrDefault("lastName", ""),
-                toJson(body), caller);
+                toJson(extractForm(body)), caller);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * A09a (D-23) — Returns a saved draft so step 1 can be resumed with every field restored.
+     *
+     * @param id the draft ID
+     * @return 200 {@code {id, firstName, lastName, form}} / 404
+     */
+    @GetMapping("/api/onboarding-drafts/{id}")
+    @PreAuthorize("hasRole('HR')")
+    public ResponseEntity<OnboardingService.DraftDto> getDraft(@PathVariable final long id) {
+        return ResponseEntity.ok(onboardingService.getDraft(id));
+    }
+
+    /**
+     * The step-1 form to store in {@code onboarding_draft.form}: the {@code form} object of the
+     * body, plus any other top-level field except the two dedicated columns (older clients sent
+     * e.g. {@code privateEmail} at the top level).
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractForm(final Map<String, Object> body) {
+        final Map<String, Object> form = new java.util.LinkedHashMap<>();
+        body.forEach((k, v) -> {
+            if (!"firstName".equals(k) && !"lastName".equals(k) && !"form".equals(k)) {
+                form.put(k, v);
+            }
+        });
+        if (body.get("form") instanceof Map<?, ?> nested) {
+            form.putAll((Map<String, Object>) nested);
+        }
+        return form;
     }
 
     /**
@@ -201,7 +231,7 @@ public class OnboardingController {
     @PreAuthorize("hasRole('HR')")
     public ResponseEntity<Void> updateOnboardingDetails(
             @PathVariable final Long employeeId,
-            @RequestBody final OnboardingService.UpdateDetailsRequest req) {
+            @Valid @RequestBody final OnboardingService.UpdateDetailsRequest req) {
         final Employee caller = currentUser.require();
         onboardingService.updateOnboardingDetails(employeeId, req, caller);
         return ResponseEntity.ok().build();
@@ -416,7 +446,11 @@ public class OnboardingController {
         final Resource resource = documentStorageService.retrieve(doc.storageKey());
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(doc.contentType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + doc.fileName() + "\"")
+                // Spring builds a quoted, escaped filename plus an RFC 5987 filename* (UTF-8), so a
+                // stored name containing quotes, CR/LF or non-ASCII cannot break the header
+                .header(HttpHeaders.CONTENT_DISPOSITION, org.springframework.http.ContentDisposition.inline()
+                        .filename(doc.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                        .build().toString())
                 .body(resource);
     }
 

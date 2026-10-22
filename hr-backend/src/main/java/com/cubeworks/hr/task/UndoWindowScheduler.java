@@ -7,7 +7,11 @@ import com.cubeworks.hr.employee.EmployeeStage;
 import com.cubeworks.hr.engine.CaseEngineClient;
 import com.cubeworks.hr.onboarding.Onboarding;
 import com.cubeworks.hr.onboarding.OnboardingRepository;
+import com.cubeworks.hr.onboarding.ItStatus;
 import com.cubeworks.hr.onboarding.OnboardingStatus;
+import com.cubeworks.hr.notification.TaskNotificationService;
+import com.cubeworks.hr.service.probation.ProbationReviewService;
+import com.cubeworks.hr.settings.OwnerRole;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +72,8 @@ public class UndoWindowScheduler {
     private final CaseEngineClient caseEngineClient;
     private final Clock clock;
     private final ObjectMapper objectMapper;
+    private final ProbationReviewService probationReviewService;
+    private final TaskNotificationService taskNotificationService;
 
     /**
      * Self-reference injected lazily so that {@code processExpiredPending} can call
@@ -98,7 +104,11 @@ public class UndoWindowScheduler {
                                 final EmailOutboxService emailOutboxService,
                                 final CaseEngineClient caseEngineClient,
                                 final Clock clock,
-                                final ObjectMapper objectMapper) {
+                                final ObjectMapper objectMapper,
+                                final ProbationReviewService probationReviewService,
+                                final TaskNotificationService taskNotificationService) {
+        this.probationReviewService = probationReviewService;
+        this.taskNotificationService = taskNotificationService;
         this.engineTaskRepository = engineTaskRepository;
         this.employeeRepository = employeeRepository;
         this.onboardingRepository = onboardingRepository;
@@ -157,11 +167,32 @@ public class UndoWindowScheduler {
      *
      * @param taskId the numeric PK of the engine_task row
      */
+    /** Wait before re-attempting a FAILED engine call, so an engine outage isn't hammered every 2 s. */
+    static final int RETRY_BACKOFF_SECONDS = 60;
+
+    /**
+     * True when the engine has a case for this task's employee, reports its open tasks, and this
+     * task id is not among them — only meaningful for a real (non-placeholder) engine task id.
+     */
+    private boolean alreadyCompletedInEngine(final EngineTask task) {
+        try {
+            final String caseId = task.getEmployee().getEmployeeCode();
+            final List<java.util.Map<String, Object>> open = caseEngineClient.findOpenTasks(caseId);
+            return !open.isEmpty()
+                    && open.stream().noneMatch(t -> task.getEngineTaskId().equals(t.get("id")))
+                    && open.stream().noneMatch(t -> task.getTaskName().equals(t.get("taskName")));
+        } catch (final Exception lookupFailed) {
+            return false;
+        }
+    }
+
     @Transactional
     public void processSingleTask(final Long taskId) {
         final EngineTask task = engineTaskRepository.findById(taskId).orElse(null);
-        if (task == null || task.getPendingStatus() != PendingStatus.PENDING) {
-            // Already processed or undone between the poll and this call
+        if (task == null || (task.getPendingStatus() != PendingStatus.PENDING
+                && task.getPendingStatus() != PendingStatus.FAILED)) {
+            // Already processed or undone between the poll and this call. FAILED rows are
+            // retried (R-ARC-5) — findExpiredPending returns them once their back-off has passed.
             return;
         }
 
@@ -188,12 +219,22 @@ public class UndoWindowScheduler {
             log.info("Executed engine task id={} name='{}' for employee={}",
                     taskId, task.getTaskName(), task.getEmployee().getId());
         } catch (final Exception ex) {
-            log.error("Engine completeTask failed for task id={}; marking FAILED for retry",
-                    taskId, ex);
-            task.setPendingStatus(PendingStatus.FAILED);
-            task.setUpdatedAt(now);
-            engineTaskRepository.save(task);
-            return;
+            if (alreadyCompletedInEngine(task)) {
+                // A previous attempt reached the engine but this row's EXECUTED update was rolled
+                // back (e.g. an optimistic-lock conflict after the call). The engine no longer has
+                // the task open, so treat it as executed and run the side effects now.
+                log.warn("Engine task id={} is no longer open in the engine; treating as executed", taskId);
+                task.setPendingStatus(PendingStatus.EXECUTED);
+                task.setCompletedAt(now);
+            } else {
+                log.error("Engine completeTask failed for task id={}; marking FAILED, retry in {} s",
+                        taskId, RETRY_BACKOFF_SECONDS, ex);
+                task.setPendingStatus(PendingStatus.FAILED);
+                task.setPendingExecuteAt(now.plusSeconds(RETRY_BACKOFF_SECONDS));
+                task.setUpdatedAt(now);
+                engineTaskRepository.save(task);
+                return;
+            }
         }
 
         task.setUpdatedAt(now);
@@ -227,6 +268,55 @@ public class UndoWindowScheduler {
                 emailOutboxService.enqueue("ONBOARDING_COMPLETED", emp.getManager().getPrivateEmail(),
                         "Onboarding completed for " + employeeName, body, emp);
             }
+
+            // The engine exits "Onboarding overdue" when "Onboarding checklist" completes
+            // (employeecase.case xc_onboarding_overdue) — close Spring's mirror the same way.
+            engineTaskRepository.findOpenByEmployeeAndTaskName(emp.getId(), TaskService.TASK_ONBOARDING_OVERDUE)
+                    .forEach(overdue -> {
+                        overdue.setCompletedAt(now);
+                        overdue.setUpdatedAt(now);
+                        engineTaskRepository.save(overdue);
+                    });
+
+            // FRD-02 §2: "The employee receives a 'Create development plan' task (FRD-04)". The
+            // engine raises it when "Active employment" starts (milestone "Employee onboarded");
+            // mirror it now (placeholder id, EngineTaskWatcher resolves the real one by name) so it
+            // shows in the employee's My Tasks and G-04 fires. Due date: [OPEN] in FRD-04 (spec
+            // FRD-02 §12 D-P9) — the stage start date until F05 decides.
+            if (!engineTaskRepository.existsByEmployeeIdAndTaskName(emp.getId(),
+                    TaskService.TASK_CREATE_DEVELOPMENT_PLAN)) {
+                final EngineTask plan = new EngineTask();
+                plan.setEngineTaskId(java.util.UUID.randomUUID().toString());
+                plan.setEmployee(emp);
+                plan.setOwnerEmployee(emp);
+                plan.setTaskName(TaskService.TASK_CREATE_DEVELOPMENT_PLAN);
+                plan.setDueDate(now.toLocalDate());
+                plan.setRelatedEntity("DEVELOPMENT_PLAN");
+                plan.setCreatedAt(now);
+                plan.setUpdatedAt(now);
+                plan.setNotifiedAt(now);
+                engineTaskRepository.save(plan);
+                taskNotificationService.notifyTaskAssigned(OwnerRole.EMPLOYEE, emp,
+                        TaskService.TASK_CREATE_DEVELOPMENT_PLAN, "/me/development/plan");
+            }
+        }
+
+        // FRD-02 §4.4: closing the IT work sets onboarding.it_status — COMPLETED once no IT setup
+        // is left ("Equipment request" with itSetupComplete=true, or "Remaining setup"),
+        // IN_PROGRESS while "Remaining setup" still follows. Shown on step 2 as "Completed by IT".
+        if ("Equipment request".equals(task.getTaskName()) || "Remaining setup".equals(task.getTaskName())) {
+            final boolean done = "Remaining setup".equals(task.getTaskName())
+                    || task.getPendingOutput().contains("\"itSetupComplete\":true");
+            onboardingRepository.findByEmployeeId(task.getEmployee().getId()).ifPresent(onb -> {
+                onb.setItStatus(done ? ItStatus.COMPLETED : ItStatus.IN_PROGRESS);
+                onb.setUpdatedAt(now);
+                onboardingRepository.save(onb);
+            });
+        }
+
+        // Probation review / HR decision follow-ups (ONB-08)
+        if (ProbationReviewService.isProbationTask(task)) {
+            probationReviewService.onTaskExecuted(task);
         }
     }
 }

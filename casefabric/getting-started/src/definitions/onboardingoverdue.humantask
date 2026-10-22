@@ -1,0 +1,15 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="OnboardingOverdue" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[HR follow-up when onboarding is still not complete ONBOARDING_OVERDUE days after the start date (FRD-02 section 1 "Constraints", FRD-08 timer). Raised by Spring's OnboardingOverdueScheduler (E1 fallback: no native timer can read a case-file date); exited automatically once "Onboarding checklist" completes. No case-file output.]]></text>
+        </documentation>
+        <task-model>{
+  "schema": {
+    "title": "Onboarding overdue",
+    "type": "object",
+    "properties": {}
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

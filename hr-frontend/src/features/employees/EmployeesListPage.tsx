@@ -13,7 +13,7 @@
  * Route: { path: '/employees', element: <EmployeesListPage /> }
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -48,18 +48,29 @@ export function EmployeesListPage(): ReactElement {
   const isHR = user?.appRole === 'HR'
 
   // stageFilter is a client-controlled query param for server-side stage filtering.
-  // The search box is handled by the Table component's built-in client-side filter.
   const [stageFilter, setStageFilter] = useState('')
   // Department / manager filters (HR only) — server-side, by id ('' = all)
   const [departmentFilter, setDepartmentFilter] = useState('')
   const [managerFilter, setManagerFilter] = useState('')
   // A04 is paged server-side (20 per page); 0-based, reset to 0 whenever a filter changes
   const [page, setPage] = useState(0)
+  // Search runs server-side (A04 `q`: name or employee ID) so it covers every page, not just
+  // the rows on screen; sent 300 ms after the last keystroke
+  const [search, setSearch] = useState('')
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQ(search.trim())
+      setPage(0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const listParams = {
     stage: stageFilter || undefined,
     departmentId: departmentFilter !== '' ? Number(departmentFilter) : undefined,
     managerId: managerFilter !== '' ? Number(managerFilter) : undefined,
+    q: q || undefined,
   }
 
   const { data, isLoading } = useQuery({
@@ -195,7 +206,11 @@ export function EmployeesListPage(): ReactElement {
           </Link>
         ) : (
           <Link
-            to={`/employees/${r.id ?? ''}`}
+            // FRD-02 §3 Screen 2: an Employees-list row in stage Onboarding opens the
+            // onboarding wizard (step 1), not the employee record
+            to={r.stage === 'ONBOARDING'
+              ? `/employees/${r.id ?? ''}/onboarding?step=0`
+              : `/employees/${r.id ?? ''}`}
             className={actionButtonClass}
           >
             View
@@ -300,12 +315,14 @@ export function EmployeesListPage(): ReactElement {
         rows={rows}
         onExport={isHR ? handleExport : undefined}
         isLoading={isLoading}
-        searchPlaceholder="Search employees…"
+        searchPlaceholder="Search by name or ID…"
+        search={search}
+        onSearchChange={setSearch}
         filters={filters}
         emptyMessage="No employees found."
       />
 
-      {/* Pager — the search box only filters the rows of the current page */}
+      {/* Pager */}
       {data !== undefined && data.totalPages > 1 && (
         <nav aria-label="Employee list pages" className="flex items-center justify-center gap-3">
           <button

@@ -1,0 +1,15 @@
+<humanTask xmlns="http://www.omg.org/spec/CMMN/20151109/MODEL" xmlns:cafienne="org.cafienne">
+    <cafienne:implementation name="CreateDevelopmentPlan" class="org.cafienne.cmmn.definition.task.WorkflowTaskDefinition">
+        <documentation textFormat="text/plain">
+            <text><![CDATA[Raised for the employee when the case enters Active employment (FRD-02 section 2: "The employee receives a 'Create development plan' task (FRD-04)"). The development plan screens and the completion of this task belong to FRD-04 (F05). No case-file output yet.]]></text>
+        </documentation>
+        <task-model>{
+  "schema": {
+    "title": "Create development plan",
+    "type": "object",
+    "properties": {}
+  },
+  "uiSchema": {}
+}</task-model>
+    </cafienne:implementation>
+</humanTask>

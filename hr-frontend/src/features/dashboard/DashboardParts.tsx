@@ -74,7 +74,7 @@ export function DashboardTasks({ tasks, className = '' }: { tasks: DashboardTask
         <ul className="border border-gray-200 rounded-lg divide-y divide-gray-200 overflow-hidden">
           {tasks.map((task, i) => {
             const title = task.employeeName != null ? `${task.title} · ${task.employeeName}` : task.title
-            const route = taskRoute(user?.appRole, task.title, task.employeeId, equipmentOpenFor) ?? '/my-tasks'
+            const route = taskRoute(user?.appRole, task.title, task.employeeId, equipmentOpenFor, task) ?? '/my-tasks'
             return (
               <li
                 key={task.taskId ?? `task-${i}`}

@@ -8,6 +8,7 @@ import com.cubeworks.hr.employee.EmployeeRepository;
 import com.cubeworks.hr.onboarding.ChecklistItem;
 import com.cubeworks.hr.onboarding.ChecklistItemRepository;
 import com.cubeworks.hr.onboarding.ChecklistPhase;
+import com.cubeworks.hr.service.probation.ProbationReviewService;
 import com.cubeworks.hr.settings.OwnerRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -52,7 +53,17 @@ public class TaskService {
     private final EngineTaskRepository engineTaskRepository;
     private final ChecklistItemRepository checklistItemRepository;
     private final EmployeeRepository employeeRepository;
+    private final ProbationReviewService probationReviewService;
     private final Clock clock;
+
+    /** HR follow-up raised by OnboardingOverdueScheduler (engine task, FRD-02 section 1). */
+    public static final String TASK_ONBOARDING_OVERDUE = "Onboarding overdue";
+    /** Employee task raised by the engine when Active employment starts (FRD-02 section 2, FRD-04). */
+    public static final String TASK_CREATE_DEVELOPMENT_PLAN = "Create development plan";
+    /** {@link TaskItemDto#entityType()} of an engine_task row (OPEN-02). */
+    public static final String ENTITY_ENGINE_TASK = "ENGINE_TASK";
+    /** {@link TaskItemDto#entityType()} of a checklist_item row (OPEN-02). */
+    public static final String ENTITY_CHECKLIST_ITEM = "CHECKLIST_ITEM";
 
     /**
      * Constructor injection (R-CODE-1).
@@ -64,10 +75,12 @@ public class TaskService {
     public TaskService(final EngineTaskRepository engineTaskRepository,
                        final ChecklistItemRepository checklistItemRepository,
                        final EmployeeRepository employeeRepository,
+                       final ProbationReviewService probationReviewService,
                        final Clock clock) {
         this.engineTaskRepository = engineTaskRepository;
         this.checklistItemRepository = checklistItemRepository;
         this.employeeRepository = employeeRepository;
+        this.probationReviewService = probationReviewService;
         this.clock = clock;
     }
 
@@ -107,6 +120,14 @@ public class TaskService {
                     .filter(t -> t.getEmployee() == null || !caller.getId().equals(t.getEmployee().getId()))
                     .map(t -> toTaskItem(t, today, creatorNames))
                     .forEach(items::add);
+            // "Onboarding overdue" (FRD-02 section 1) and "Approve end of employment" (ONB-08)
+            for (final String name : List.of(TASK_ONBOARDING_OVERDUE, ProbationReviewService.TASK_APPROVE_END)) {
+                engineTaskRepository.findOpenByTaskName(name).stream()
+                        .filter(t -> name.equals(t.getTaskName()))
+                        .filter(t -> t.getEmployee() == null || !caller.getId().equals(t.getEmployee().getId()))
+                        .map(t -> toTaskItem(t, today, creatorNames))
+                        .forEach(items::add);
+            }
         } else if (caller.getAppRole() == AppRole.IT_ADMIN) {
             // IT admin sees open Equipment request and Remaining setup engine tasks
             engineTaskRepository.findOpenByTaskName("Equipment request").stream()
@@ -132,6 +153,11 @@ public class TaskService {
                     .map(ci -> toTaskItem(ci, today, creatorNames))
                     .forEach(items::add);
         } else if (caller.getAppRole() == AppRole.EMPLOYEE) {
+            // Employee's own engine task "Create development plan" (FRD-02 section 2)
+            engineTaskRepository.findOpenByEmployeeAndTaskName(caller.getId(), TASK_CREATE_DEVELOPMENT_PLAN)
+                    .stream()
+                    .map(t -> toTaskItem(t, today, creatorNames))
+                    .forEach(items::add);
             // Employee sees their own EMPLOYEE-owned open items
             checklistItemRepository
                     .findByEmployeeIdAndPhaseAndOwnerRole(caller.getId(),
@@ -148,6 +174,13 @@ public class TaskService {
                     .findOpenManagerItemsForManager(ChecklistPhase.ONBOARDING, caller.getId())
                     .stream()
                     .map(ci -> toTaskItem(ci, today, creatorNames))
+                    .forEach(items::add);
+            // The manager's own "Probation review" tasks (FRD-02 Screen 12), by owner_employee_id
+            // (Transfer manager moves it along with the employee)
+            engineTaskRepository.findOpenByOwnerAndTaskName(caller.getId(), ProbationReviewService.TASK_PROBATION_REVIEW)
+                    .stream()
+                    .filter(t -> !caller.getId().equals(t.getEmployee().getId()))
+                    .map(t -> toTaskItem(t, today, creatorNames))
                     .forEach(items::add);
         }
 
@@ -231,6 +264,11 @@ public class TaskService {
         task.setUpdatedAt(now);
         task.setUpdatedBy(caller.getId());
         engineTaskRepository.save(task);
+
+        // Probation submit / HR decision: put the review back the way it was (P03/P04)
+        if (ProbationReviewService.isProbationTask(task)) {
+            probationReviewService.onTaskUndone(task, caller);
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -246,13 +284,16 @@ public class TaskService {
                                    final Map<Long, String> creatorNames) {
         return new TaskItemDto(
                 t.getId(),
-                "ONBOARDING",
+                moduleOf(t),
                 t.getTaskName(),
                 t.getEmployee() != null ? t.getEmployee().getId() : null,
                 t.getDueDate() != null ? t.getDueDate().toString() : null,
                 computeDueState(t.getDueDate(), today),
                 fullName(t.getEmployee()),
-                creatorName(t.getCreatedBy(), creatorNames)
+                creatorName(t.getCreatedBy(), creatorNames),
+                ENTITY_ENGINE_TASK,
+                t.getEmployee() != null ? t.getEmployee().getEmployeeCode() : null,
+                t.getRelatedId()
         );
     }
 
@@ -273,8 +314,22 @@ public class TaskService {
                 ci.getDueDate() != null ? ci.getDueDate().toString() : null,
                 computeDueState(ci.getDueDate(), today),
                 fullName(ci.getEmployee()),
-                creatorName(ci.getCreatedBy(), creatorNames)
+                creatorName(ci.getCreatedBy(), creatorNames),
+                ENTITY_CHECKLIST_ITEM,
+                ci.getEmployee() != null ? ci.getEmployee().getEmployeeCode() : null,
+                null
         );
+    }
+
+    /** My Tasks module of an engine task: PROBATION, DEVELOPMENT or ONBOARDING. */
+    private static String moduleOf(final EngineTask t) {
+        if (ProbationReviewService.isProbationTask(t)) {
+            return "PROBATION";
+        }
+        if (TASK_CREATE_DEVELOPMENT_PLAN.equals(t.getTaskName())) {
+            return "DEVELOPMENT";
+        }
+        return "ONBOARDING";
     }
 
     /** "First Last", or null when there is no employee. */
@@ -325,7 +380,13 @@ public class TaskService {
                                Long employeeId, String dueDate, String dueState,
                                // My Tasks "Employee" and "Raised by" columns; raisedBy is
                                // null when the task was created by the system (no created_by)
-                               String employeeName, String raisedBy) {}
+                               String employeeName, String raisedBy,
+                               // OPEN-02: which table taskId belongs to (ENGINE_TASK /
+                               // CHECKLIST_ITEM); only ENGINE_TASK ids can be undone (A37)
+                               String entityType,
+                               // the employee's code (FRD-02 Screen 12/13 routes use :code) and
+                               // engine_task.related_id (probation tasks: the review id)
+                               String employeeCode, Long relatedId) {}
 
     /**
      * Paginated wrapper for the My Tasks list.

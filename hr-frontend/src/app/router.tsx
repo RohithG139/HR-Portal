@@ -36,6 +36,8 @@ import { UnreturnedAssetsReportPage } from '../features/reports/UnreturnedAssets
 // FRD-01 Wave 3: My Team (Manager), PRJ-08 placeholder
 import { MyTeamPage } from '../features/team/MyTeamPage'
 import { ProjectMemberPage } from '../features/projects/ProjectMemberPage'
+import { ProbationReviewPage } from '../features/probation/ProbationReviewPage'
+import { UnderConstruction } from './UnderConstruction'
 
 export const router = createBrowserRouter([
   {
@@ -177,6 +179,25 @@ export const router = createBrowserRouter([
       {
         path: 'team',
         element: <MyTeamPage />,
+      },
+
+      // FRD-02 Screen 12 — Probation review (Manager, task "Probation review")
+      {
+        path: 'team/:code/probation-review',
+        element: <ProbationReviewPage mode="manager" />,
+      },
+
+      // FRD-02 Screen 13 — Approve end of employment (HR, task "Approve end of employment");
+      // same page with an HR action bar (spec D-P4)
+      {
+        path: 'employees/:code/probation-review/decision',
+        element: <ProbationReviewPage mode="hr" />,
+      },
+
+      // FRD-04 Screen 2 (task "Create development plan") — placeholder until F05 builds it
+      {
+        path: 'me/development/plan',
+        element: <UnderConstruction />,
       },
 
       // W10 screen — PRJ-08 project member view placeholder (D-W7).
