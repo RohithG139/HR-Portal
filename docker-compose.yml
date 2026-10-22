@@ -189,9 +189,6 @@ services:
       # its Docker service name. Also wires EmailOutboxSenderJob's now-real SMTP client
       # (Gate 2 had only stubbed/logged the send, never actually delivering anything).
       SPRING_MAIL_HOST: mailcatcher
-      # Dev only: check for due probation reviews every minute instead of hourly, so testers
-      # see the "Probation review" task right after making an employee due (Settings or dates).
-      HR_PROBATION_CHECK_INTERVAL_MS: "60000"
     depends_on:
       # Wait for Postgres to accept connections before Spring Boot starts Flyway.
       hr-db-postgres:

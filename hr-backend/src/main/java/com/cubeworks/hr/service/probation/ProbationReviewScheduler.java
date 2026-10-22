@@ -37,12 +37,8 @@ public class ProbationReviewScheduler {
         this.clock = clock;
     }
 
-    /**
-     * Hourly by default (day-granularity rule): creates due reviews, then retries unconfirmed
-     * engine calls. The dev stack polls every minute ({@code HR_PROBATION_CHECK_INTERVAL_MS}) so
-     * a tester sees a review within a minute of making an employee due.
-     */
-    @Scheduled(fixedDelayString = "${hr.probation.check-interval-ms:3600000}", initialDelay = 60_000)
+    /** Hourly (day-granularity rule): creates due reviews, then retries unconfirmed engine calls. */
+    @Scheduled(fixedDelay = 3_600_000, initialDelay = 60_000)
     public void run() {
         final LocalDate today = LocalDate.now(clock);
         raiseDueReviews(today);
