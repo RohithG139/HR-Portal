@@ -137,6 +137,11 @@ callback is ever lost).]]></text>
                 <documentation textFormat="text/plain">
                     <text><![CDATA[Owner: HR. FRD-02 section 1: "If onboarding is still not complete 3 days after the start date (configurable, FRD-08), HR gets an 'Onboarding overdue' task." E1 fallback (03-case-file.md section 1): no native timer can read Onboarding.overdueDate, so manualActivationRule keeps this Enabled until hr-backend's OnboardingOverdueScheduler starts it (CaseEngineClient.startPlanItem) once the overdue date has passed. Exited as soon as "Onboarding checklist" completes, since the overdue condition is then gone. Due date: mirrored on Spring's engine_task row (F01 D-22 pattern).]]></text>
                 </documentation>
+                <exitCriterion id="xc_onboarding_overdue">
+                    <planItemOnPart id="op_onboarding_overdue_exit" sourceRef="pi_onboarding_checklist">
+                        <standardEvent>complete</standardEvent>
+                    </planItemOnPart>
+                </exitCriterion>
                 <itemControl id="ic_onboarding_overdue">
                     <manualActivationRule id="mar_onboarding_overdue">
                         <condition id="mar_onboarding_overdue_cond">
@@ -144,11 +149,6 @@ callback is ever lost).]]></text>
                         </condition>
                     </manualActivationRule>
                 </itemControl>
-                <exitCriterion id="xc_onboarding_overdue">
-                    <planItemOnPart id="op_onboarding_overdue_exit" sourceRef="pi_onboarding_checklist">
-                        <standardEvent>complete</standardEvent>
-                    </planItemOnPart>
-                </exitCriterion>
                 <extensionElements mustUnderstand="false">
                     <cafienne:implementation xmlns:cafienne="org.cafienne" humanTaskRef="onboardingoverdue.humantask"/>
                 </extensionElements>

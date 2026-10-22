@@ -48,6 +48,9 @@ const SECTION_LABELS: Record<string, string> = {
   ORIENTATION: 'Orientation',
 }
 
+/** Contract file upload is hidden for now; set to true to show it again. */
+const SHOW_CONTRACT_FILE_UPLOAD = false
+
 /** Maps a 400 VALIDATION_FAILED body onto the form's field errors. */
 function toFieldErrors(err: ApiValidationError): Step1Errors {
   const out: Step1Errors = {}
@@ -439,7 +442,7 @@ export function Step1Details({
           {errors.verification !== undefined && (
             <p role="alert" className="text-xs text-red-600">{errors.verification}</p>
           )}
-          {!locked && (
+          {SHOW_CONTRACT_FILE_UPLOAD && !locked && (
             <div className="pt-2">
               <label htmlFor="contractFile" className="block text-sm font-medium text-gray-700 mb-1">
                 Contract file
